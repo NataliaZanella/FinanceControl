@@ -9,3 +9,17 @@
 *.sqlite
 *.sqlite3
 .env
+# Planilhas e exportações financeiras
+*.xlsx
+*.xls
+*.xlsm
+*.csv
+
+# Configurações privadas
+.env.*
+!.env.example
+appsettings.Development.json
+
+# Backups
+*.bak
+*.db-journal
