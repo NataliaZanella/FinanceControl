@@ -1,0 +1,396 @@
+@page "/valores-a-receber"
+@namespace FinanceControl.SharedUI.Components.Pages
+@using System.Globalization
+@using FinanceControl.SharedUI.Components
+@inject IValoresReceberService Servico
+@inject ILancamentoService Lancamentos
+
+<PageTitle>FinanceControl | Valores a receber</PageTitle>
+
+<div class="app-shell">
+    <aside class="sidebar">
+        <div class="brand"><span class="brand-mark">F</span> Finance<span>Control</span></div>
+        <div class="side-label">ÁREA FINANCEIRA</div>
+        <a class="nav-link" href="/">◈ &nbsp; Visão geral</a>
+        <a class="nav-selected nav-selected-link" href="/valores-a-receber">↙ &nbsp; Valores a receber</a>
+        <a class="nav-link" href="/importar">▤ &nbsp; Importar Excel</a>
+        <div class="sidebar-note">Cada valor separado. Um saldo claro por pessoa.</div>
+        <div class="sidebar-foot">C# · Blazor · SQLite<br />Versão local de desenvolvimento</div>
+    </aside>
+    <main class="main-content">
+        <header class="topbar">
+            <div><div class="eyebrow">QUEM DEVE PARA VOCÊ</div><h1>Valores a receber <span>✦</span></h1><p>Organize os itens por pessoa e acompanhe cada recebimento.</p></div>
+            <div class="entry-actions"><a class="mini-btn nav-back" href="/">← Painel</a><button class="mini-btn" disabled="@Ocupado" @onclick="AbrirDesmembramentoAsync">Desmembrar lançamento</button><button class="mini-btn" disabled="@Ocupado" @onclick="NovoGrupo">＋ Novo grupo</button></div>
+        </header>
+        @if (Erro is not null) { <div class="alert alert-error" role="alert">@Erro</div> }
+        @if (Sucesso is not null) { <div class="alert alert-success" role="status">@Sucesso</div> }
+
+        @if (CadastroAberto)
+        {
+            <section class="panel receivable-create">
+                <div class="panel-heading"><div><div class="section-kicker">@(Desmembrando ? "REVISÃO DO LANÇAMENTO" : "NOVO GRUPO")</div><h2>@(Desmembrando ? "Separar um lançamento em itens" : "Detalhar o que uma pessoa deve")</h2></div></div>
+                @if (Desmembrando)
+                {
+                    <p class="import-info">Selecione uma receita sem recebimentos, informe os itens e confira a soma. O valor total do mês será preservado. Antes de confirmar em seu banco principal, mantenha um backup atualizado.</p>
+                    <div class="form-pair">
+                        <div class="form-field"><label for="mes-origem">Mês do lançamento existente</label><input id="mes-origem" type="month" required @bind="CompetenciaOrigens" @bind:format="yyyy-MM" @bind:after="CarregarOrigensAsync" disabled="@Ocupado" /></div>
+                        <div class="form-field"><label for="origem">Lançamento para desmembrar</label><select id="origem" @bind="OrigemId" @bind:after="SelecionarOrigem" disabled="@Ocupado"><option value="0">Selecione um lançamento</option>
+                            @foreach (var origem in Origens) { <option value="@origem.Id">@Moeda(origem.ValorPrevisto) · @(origem.Descricao.Length > 90 ? origem.Descricao[..90] + "…" : origem.Descricao)</option> }
+                        </select></div>
+                    </div>
+                    @if (Origens.Count == 0) { <p class="field-note">Não há receitas elegíveis neste mês. Despesas, lançamentos com recebimentos e itens já agrupados não podem ser desmembrados.</p> }
+                    @if (OrigemAtual is { } original)
+                    {
+                        <div class="import-info"><strong>Original: @original.Descricao</strong><p>Valor: @Moeda(original.ValorPrevisto) · Competência: @original.Competencia.ToString("MM/yyyy")</p><p>O primeiro item manterá o ID e a origem de importação. A descrição original ficará registrada em suas observações.</p></div>
+                    }
+                }
+                else
+                {
+                    <p class="import-info">Cadastre somente valores ainda não registrados. Para separar um registro antigo sem duplicar o total, use “Desmembrar lançamento”.</p>
+                }
+                <form @onsubmit="CriarGrupoAsync" @onsubmit:preventDefault>
+                    <fieldset class="entry-fields" disabled="@Ocupado">
+                        <div class="form-pair">
+                            <div class="form-field"><label for="pessoa">Pessoa devedora</label><input id="pessoa" required maxlength="120" @bind="Pessoa" placeholder="Nome da pessoa" /></div>
+                            <div class="form-field"><label for="titulo-grupo">Título do grupo</label><input id="titulo-grupo" required maxlength="180" @bind="Titulo" placeholder="Ex.: Compras e empréstimos" /></div>
+                        </div>
+                        <div class="form-field"><label for="competencia-grupo">Mês de referência dos novos itens</label><input id="competencia-grupo" type="month" required @bind="CompetenciaCadastro" @bind:format="yyyy-MM" disabled="@Desmembrando" /></div>
+                        @foreach (var item in NovosItens)
+                        {
+                            <div class="receivable-item-form" @key="item.Chave">
+                                <div class="form-field"><label for="@($"desc-{item.Chave}")">Descrição do item</label><input id="@($"desc-{item.Chave}")" required maxlength="180" @bind="item.Descricao" placeholder="Ex.: Mercado, impressora, empréstimo" /></div>
+                                <div class="form-field"><label for="@($"valor-{item.Chave}")">Valor (R$)</label><input id="@($"valor-{item.Chave}")" required type="number" min="0.01" step="0.01" @bind="item.Valor" /></div>
+                                <div class="form-field"><label for="@($"venc-{item.Chave}")">Vencimento (opcional)</label><input id="@($"venc-{item.Chave}")" type="date" @bind="item.Vencimento" /></div>
+                                <button class="mini-btn" type="button" disabled="@(NovosItens.Count <= (Desmembrando ? 2 : 1))" @onclick="() => NovosItens.Remove(item)" aria-label="Remover item do formulário">Remover</button>
+                            </div>
+                        }
+                        <div class="entry-actions"><button class="mini-btn" type="button" disabled="@(NovosItens.Count >= 100)" @onclick="() => NovosItens.Add(new())">＋ Adicionar outro valor</button></div>
+                        <p class="import-info"><strong>@NovosItens.Count itens · Total: @Moeda(NovosItens.Sum(x => x.Valor))</strong>. Confira os valores antes de cadastrar. Nenhum item será marcado como recebido.</p>
+                        @if (Desmembrando && OrigemAtual is not null)
+                        {
+                            <p class="import-info" role="status">Diferença em relação ao original: <strong>@Moeda(OrigemAtual.ValorPrevisto - NovosItens.Sum(x => x.Valor))</strong>. A soma precisa bater exatamente antes de confirmar.</p>
+                        }
+                        <div class="entry-actions"><button class="mini-btn" type="button" @onclick="() => CadastroAberto = false">Cancelar</button><button class="mini-btn" type="submit" disabled="@(Desmembrando && !PodeDesmembrar)">@(Ocupado ? "Salvando..." : Desmembrando ? "Confirmar desmembramento revisado" : "Cadastrar itens revisados")</button></div>
+                    </fieldset>
+                </form>
+            </section>
+        }
+
+        @if (GrupoAtual is not null)
+        {
+            <section class="stats-grid receivable-stats" aria-label="Totais do grupo selecionado">
+                <article class="stat-card"><div class="stat-label">Total devido</div><div class="stat-value">@Moeda(GrupoAtual.TotalDevido)</div><div class="stat-sub">Todos os itens do grupo</div></article>
+                <article class="stat-card stat-income"><div class="stat-label">Já recebido</div><div class="stat-value">@Moeda(GrupoAtual.TotalRecebido)</div><div class="stat-sub">Somente recebimentos registrados</div></article>
+                <article class="stat-card stat-pending"><div class="stat-label">Falta receber</div><div class="stat-value">@Moeda(GrupoAtual.SaldoAReceber)</div><div class="stat-sub">Saldo da pessoa neste grupo</div></article>
+            </section>
+        }
+
+        <div class="receivable-grid">
+            <section class="panel">
+                <div class="panel-heading"><h2>Pessoas e grupos</h2><span class="count-pill">@Grupos.Count</span></div>
+                @if (Grupos.Count == 0) { <p class="empty-state">Nenhum grupo cadastrado. Use “Novo grupo” para começar.</p> }
+                @foreach (var grupo in Grupos.Skip((PaginaGrupos - 1) * 6).Take(6))
+                {
+                    <button class="receivable-group @(grupo.Id == GrupoId ? "selected" : "")" type="button" disabled="@Ocupado" @onclick="() => SelecionarGrupo(grupo.Id)">
+                        <strong>@grupo.Pessoa</strong><span>@grupo.Descricao</span><span>@grupo.Itens.Count itens · Falta @Moeda(grupo.SaldoAReceber)</span>
+                    </button>
+                }
+                @if (TotalPaginasGrupos > 1)
+                {
+                    <nav class="entries-pagination" aria-label="Paginação dos grupos">
+                        <button class="mini-btn" disabled="@(Ocupado || PaginaGrupos == 1)" @onclick="() => PaginaGrupos--">Anterior</button><span>@PaginaGrupos de @TotalPaginasGrupos</span><button class="mini-btn" disabled="@(Ocupado || PaginaGrupos == TotalPaginasGrupos)" @onclick="() => PaginaGrupos++">Próxima</button>
+                    </nav>
+                }
+            </section>
+            @if (GrupoAtual is { } atual)
+            {
+                <section class="panel">
+                    <div class="panel-heading"><div><div class="section-kicker">@atual.Pessoa</div><h2>@atual.Descricao</h2></div>
+                        <div class="entry-actions">
+                            <button class="mini-btn" disabled="@Ocupado" @onclick="AbrirNovoItem">＋ Adicionar item</button>
+                            <button class="mini-btn" disabled="@Ocupado" @onclick="PrepararEdicaoGrupo">Editar grupo</button>
+                            <button class="mini-btn danger-btn" disabled="@(Ocupado || atual.TotalRecebido > 0)" title="@(atual.TotalRecebido > 0 ? "Grupos com recebimentos não podem ser excluídos" : "Revisar exclusão do grupo e seus itens")" @onclick="PrepararExclusaoGrupo">Excluir grupo</button>
+                        </div>
+                    </div>
+                    @if (EditandoGrupo)
+                    {
+                        <section class="payment-box"><h3>Editar pessoa e título</h3>
+                            <form @onsubmit="SalvarGrupoAsync" @onsubmit:preventDefault><fieldset class="entry-fields" disabled="@Ocupado">
+                                <div class="form-field"><label for="editar-pessoa">Pessoa devedora</label><input id="editar-pessoa" required maxlength="120" @bind="PessoaEdicao" /></div>
+                                <div class="form-field"><label for="editar-titulo">Título do grupo</label><input id="editar-titulo" required maxlength="180" @bind="TituloEdicao" /></div>
+                                <div class="entry-actions"><button class="mini-btn" type="button" @onclick="FecharDetalhes">Cancelar</button><button class="mini-btn" type="submit">Salvar grupo</button></div>
+                            </fieldset></form>
+                        </section>
+                    }
+                    <p class="field-note">Estes itens também aparecem no painel mensal, como receitas previstas. Os valores abaixo abrangem todas as competências deste grupo.</p>
+                    <div class="table-wrap">
+                        <table>
+                            <thead><tr><th>Item</th><th>Valor</th><th>Recebido</th><th>Falta receber</th><th>Situação</th><th>Ação</th></tr></thead>
+                            <tbody>
+                                @foreach (var item in atual.Itens.Skip((PaginaItens - 1) * 6).Take(6))
+                                {
+                                    <tr @key="item.Id"><td><strong>@item.Descricao</strong><div class="small-muted">@item.Competencia.ToString("MM/yyyy") @if (item.DataVencimento.HasValue) { <span>· Vence @item.DataVencimento.Value.ToString("dd/MM/yyyy")</span> }</div></td>
+                                        <td>@Moeda(item.ValorPrevisto)</td><td>@Moeda(item.ValorRealizado)</td><td>@Moeda(item.SaldoPendente)</td><td><span class="status-tag @item.Situacao.ToLowerInvariant()">@item.Situacao</span></td>
+                                        <td>@if (item.SaldoPendente > 0) { <button class="mini-btn" disabled="@Ocupado" @onclick="() => PrepararRecebimento(item)">Receber</button> } @if (item.ValorRealizado > 0) { <button class="mini-btn" disabled="@Ocupado" @onclick="() => AbrirHistoricoAsync(item)">Histórico</button> }
+                                            <button class="mini-btn" disabled="@Ocupado" @onclick="() => PrepararEdicaoItem(item)">Editar</button>
+                                            <button class="mini-btn danger-btn" disabled="@(Ocupado || item.ValorRealizado > 0)" title="@(item.ValorRealizado > 0 ? "Itens com recebimentos não podem ser excluídos" : "Revisar exclusão do item")" @onclick="() => PrepararExclusaoItem(item)">Excluir</button>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                    <nav class="entries-pagination" aria-label="Paginação dos itens">
+                        <span>@atual.Itens.Count itens</span><div class="pagination-controls"><button class="mini-btn" disabled="@(Ocupado || PaginaItens == 1)" @onclick="() => MudarPaginaItens(-1)">Anterior</button><span role="status">Página @PaginaItens de @TotalPaginasItens</span><button class="mini-btn" disabled="@(Ocupado || PaginaItens == TotalPaginasItens)" @onclick="() => MudarPaginaItens(1)">Próxima</button></div>
+                    </nav>
+                    @if (AdicionandoItem)
+                    {
+                        <section class="payment-box"><h3>@(ItemEmEdicao is null ? $"Novo valor para {atual.Pessoa}" : "Editar item")</h3>
+                            @if (ItemEmEdicao is { ValorRealizado: > 0 }) { <p class="import-info">Já recebido: @Moeda(ItemEmEdicao.ValorRealizado). O previsto deve cobrir esse total; a competência será preservada.</p> }
+                            <form @onsubmit="SalvarItemAsync" @onsubmit:preventDefault><fieldset class="entry-fields" disabled="@Ocupado">
+                                <div class="form-field"><label for="novo-item-desc">Descrição</label><input id="novo-item-desc" required maxlength="180" @bind="ItemAdicional.Descricao" /></div>
+                                <div class="form-pair"><div class="form-field"><label for="novo-item-valor">Valor (R$)</label><input id="novo-item-valor" type="number" required min="0.01" step="0.01" @bind="ItemAdicional.Valor" /></div><div class="form-field"><label for="novo-item-mes">Competência</label><input id="novo-item-mes" type="month" required @bind="CompetenciaAdicional" @bind:format="yyyy-MM" disabled="@(ItemEmEdicao is { ValorRealizado: > 0 })" /></div></div>
+                                <div class="form-field"><label for="novo-item-venc">Vencimento (opcional)</label><input id="novo-item-venc" type="date" @bind="ItemAdicional.Vencimento" /></div>
+                                <div class="form-field"><label for="novo-item-obs">Observações (opcional)</label><textarea id="novo-item-obs" maxlength="1000" rows="2" @bind="ItemAdicional.Observacoes"></textarea></div>
+                                <div class="entry-actions"><button class="mini-btn" type="button" @onclick="FecharDetalhes">Cancelar</button><button class="mini-btn" type="submit">@(ItemEmEdicao is null ? "Adicionar valor" : "Salvar alterações")</button></div>
+                            </fieldset></form>
+                        </section>
+                    }
+                    @if (ItemRecebimento is not null)
+                    {
+                        <section class="payment-box"><h3>Receber: @ItemRecebimento.Descricao</h3><p class="small-muted">Falta receber @Moeda(ItemRecebimento.SaldoPendente). Você pode registrar somente uma parte.</p>
+                            <form @onsubmit="ReceberAsync" @onsubmit:preventDefault><fieldset class="entry-fields" disabled="@Ocupado">
+                                <div class="form-pair"><div class="form-field"><label for="receber-valor">Valor recebido (R$)</label><input id="receber-valor" type="number" required min="0.01" step="0.01" max="@ItemRecebimento.SaldoPendente.ToString(CultureInfo.InvariantCulture)" @bind="ValorRecebido" /></div><div class="form-field"><label for="receber-data">Data efetiva</label><input id="receber-data" type="date" required @bind="DataRecebimento" /></div></div>
+                                <div class="form-field"><label for="receber-obs">Observação (opcional)</label><input id="receber-obs" maxlength="500" @bind="ObservacaoRecebimento" /></div>
+                                <div class="entry-actions"><button class="mini-btn" type="button" @onclick="FecharDetalhes">Cancelar</button><button class="mini-btn" type="submit">Registrar recebimento</button></div>
+                            </fieldset></form>
+                        </section>
+                    }
+                    @if (ItemHistorico is not null)
+                    {
+                        <section class="payment-box"><div class="payment-header"><h3>Histórico: @ItemHistorico.Descricao</h3><button class="mini-btn" @onclick="FecharDetalhes">Fechar</button></div>
+                            <ul class="history-list">@foreach (var baixa in Historico) { <li><span>@baixa.Data.ToString("dd/MM/yyyy")<small>@baixa.Observacao</small></span><strong>@Moeda(baixa.Valor)</strong></li> }</ul>
+                        </section>
+                    }
+                </section>
+            }
+        </div>
+    </main>
+</div>
+
+<ConfirmacaoExclusao Lancamento="ItemParaExcluir" Descricao="@DescricaoExclusaoGrupo" Aviso="@AvisoExclusao" Erro="@Erro" Processando="Ocupado"
+                    Cancelar="CancelarExclusao" Confirmar="ConfirmarExclusaoAsync" />
+
+@code {
+    private IReadOnlyList<GrupoReceberDto> Grupos = [];
+    private int GrupoId;
+    private GrupoReceberDto? GrupoAtual => Grupos.FirstOrDefault(x => x.Id == GrupoId);
+    private bool Ocupado;
+    private string? Erro, Sucesso;
+    private bool CadastroAberto, AdicionandoItem;
+    private bool Desmembrando;
+    private IReadOnlyList<LancamentoDto> Origens = [];
+    private int OrigemId;
+    private LancamentoDto? OrigemAtual => Origens.FirstOrDefault(x => x.Id == OrigemId);
+    private DateTime CompetenciaOrigens = new(DateTime.Today.Year, DateTime.Today.Month, 1);
+    private bool PodeDesmembrar => OrigemAtual is not null && NovosItens.Count >= 2
+        && NovosItens.Sum(x => x.Valor) == OrigemAtual.ValorPrevisto;
+    private bool EditandoGrupo;
+    private string PessoaEdicao = "", TituloEdicao = "";
+    private LancamentoDto? ItemEmEdicao, ItemParaExcluir;
+    private GrupoReceberDto? GrupoParaExcluir;
+    private string? DescricaoExclusaoGrupo => GrupoParaExcluir is null ? null :
+        $"Excluir o grupo {GrupoParaExcluir.Descricao}, de {GrupoParaExcluir.Pessoa}, e todos os seus {GrupoParaExcluir.Itens.Count} itens, no total de {Moeda(GrupoParaExcluir.TotalDevido)}?";
+    private string AvisoExclusao => GrupoParaExcluir is not null
+        ? "Esta ação é permanente. O grupo e seus lançamentos serão removidos também do painel mensal. Não é permitido excluir grupos com recebimentos."
+        : "Esta ação é permanente. O item será removido deste grupo e do painel mensal. Os demais itens e seus recebimentos serão preservados.";
+    private string Pessoa = "", Titulo = "";
+    private DateTime CompetenciaCadastro = new(DateTime.Today.Year, DateTime.Today.Month, 1);
+    private List<ItemFormulario> NovosItens = [new()];
+    private ItemFormulario ItemAdicional = new();
+    private DateTime CompetenciaAdicional = new(DateTime.Today.Year, DateTime.Today.Month, 1);
+    private LancamentoDto? ItemRecebimento, ItemHistorico;
+    private IReadOnlyList<BaixaDto> Historico = [];
+    private decimal ValorRecebido;
+    private DateTime DataRecebimento = DateTime.Today;
+    private string ObservacaoRecebimento = "";
+    private int PaginaGrupos = 1, PaginaItens = 1;
+    private int TotalPaginasGrupos => Math.Max(1, (Grupos.Count + 5) / 6);
+    private int TotalPaginasItens => Math.Max(1, ((GrupoAtual?.Itens.Count ?? 0) + 5) / 6);
+    private static string Moeda(decimal valor) => valor.ToString("C2", CultureInfo.GetCultureInfo("pt-BR"));
+
+    protected override async Task OnInitializedAsync() => await ExecutarAsync(CarregarAsync);
+
+    private async Task CarregarAsync()
+    {
+        Grupos = await Servico.ListarAsync();
+        if (!Grupos.Any(x => x.Id == GrupoId)) { GrupoId = Grupos.FirstOrDefault()?.Id ?? 0; PaginaItens = 1; }
+        PaginaGrupos = Math.Clamp(PaginaGrupos, 1, TotalPaginasGrupos);
+        PaginaItens = Math.Clamp(PaginaItens, 1, TotalPaginasItens);
+    }
+
+    private async Task ExecutarAsync(Func<Task> acao)
+    {
+        if (Ocupado) return;
+        Ocupado = true; Erro = Sucesso = null;
+        try { await acao(); }
+        catch (Exception ex) { Erro = ex.Message; }
+        finally { Ocupado = false; }
+    }
+
+    private void NovoGrupo()
+    {
+        if (Ocupado) return;
+        FecharDetalhes(); CadastroAberto = true; Desmembrando = false; OrigemId = 0;
+        Pessoa = Titulo = ""; NovosItens = [new()]; Erro = Sucesso = null;
+    }
+
+    private Task AbrirDesmembramentoAsync() => ExecutarAsync(async () =>
+    {
+        FecharDetalhes(); CadastroAberto = true; Desmembrando = true;
+        Pessoa = Titulo = ""; NovosItens = [new(), new()];
+        await AtualizarOrigensAsync();
+    });
+
+    private Task CarregarOrigensAsync() => ExecutarAsync(AtualizarOrigensAsync);
+
+    private async Task AtualizarOrigensAsync()
+    {
+        OrigemId = 0; Origens = [];
+        Origens = await Servico.ListarOrigensAsync(DateOnly.FromDateTime(CompetenciaOrigens));
+    }
+
+    private void SelecionarOrigem()
+    {
+        NovosItens = [new(), new()];
+        if (OrigemAtual is not null)
+        {
+            CompetenciaCadastro = OrigemAtual.Competencia.ToDateTime(TimeOnly.MinValue);
+            NovosItens[0].Vencimento = OrigemAtual.DataVencimento?.ToDateTime(TimeOnly.MinValue);
+        }
+    }
+
+    private void SelecionarGrupo(int id)
+    {
+        if (Ocupado) return;
+        FecharDetalhes(); GrupoId = id; PaginaItens = 1; Erro = Sucesso = null;
+    }
+
+    private void FecharDetalhes()
+    {
+        ItemRecebimento = ItemHistorico = ItemEmEdicao = ItemParaExcluir = null;
+        GrupoParaExcluir = null; Historico = []; AdicionandoItem = EditandoGrupo = false;
+    }
+    private void MudarPaginaItens(int passo) { if (Ocupado) return; FecharDetalhes(); PaginaItens = Math.Clamp(PaginaItens + passo, 1, TotalPaginasItens); }
+    private void AbrirNovoItem() { if (Ocupado) return; FecharDetalhes(); ItemAdicional = new(); AdicionandoItem = true; }
+    private static CriarItemReceberRequest Request(ItemFormulario item, DateTime competencia) => new(item.Descricao, item.Valor,
+        DateOnly.FromDateTime(competencia), item.Vencimento.HasValue ? DateOnly.FromDateTime(item.Vencimento.Value) : null, item.Observacoes);
+
+    private Task CriarGrupoAsync() => ExecutarAsync(async () =>
+    {
+        var itens = NovosItens.Select(x => Request(x, CompetenciaCadastro)).ToList();
+        bool convertendo = Desmembrando;
+        var grupo = convertendo
+            ? await Servico.DesmembrarAsync(new(OrigemId, Pessoa, Titulo, itens))
+            : await Servico.CriarAsync(new(Pessoa, Titulo, itens));
+        GrupoId = grupo.Id; CadastroAberto = false; Pessoa = Titulo = ""; NovosItens = [new()]; PaginaItens = 1;
+        Desmembrando = false; Origens = []; OrigemId = 0;
+        await CarregarAsync(); PaginaGrupos = Grupos.ToList().FindIndex(x => x.Id == GrupoId) / 6 + 1;
+        Sucesso = convertendo ? "Lançamento desmembrado. O total do mês e a origem da importação foram preservados."
+            : "Grupo cadastrado. Todos os itens estão previstos, sem recebimentos automáticos.";
+    });
+
+    private Task SalvarItemAsync() => ExecutarAsync(async () =>
+    {
+        var request = Request(ItemAdicional, CompetenciaAdicional);
+        bool criando = ItemEmEdicao is null;
+        if (criando) await Servico.AdicionarItemAsync(GrupoId, request);
+        else await Servico.AtualizarItemAsync(GrupoId, ItemEmEdicao!.Id,
+            new(request.Descricao, request.Valor, request.Competencia, request.Vencimento, request.Observacoes));
+        FecharDetalhes(); await CarregarAsync();
+        if (criando) PaginaItens = TotalPaginasItens;
+        Sucesso = criando ? "Novo valor adicionado ao grupo." : "Item atualizado. Os recebimentos foram preservados.";
+    });
+
+    private void PrepararEdicaoGrupo()
+    {
+        if (Ocupado || GrupoAtual is null) return;
+        FecharDetalhes(); CadastroAberto = false; EditandoGrupo = true;
+        PessoaEdicao = GrupoAtual.Pessoa; TituloEdicao = GrupoAtual.Descricao; Erro = Sucesso = null;
+    }
+
+    private Task SalvarGrupoAsync() => ExecutarAsync(async () =>
+    {
+        await Servico.AtualizarGrupoAsync(GrupoId, new(PessoaEdicao, TituloEdicao));
+        FecharDetalhes(); await CarregarAsync();
+        PaginaGrupos = Grupos.ToList().FindIndex(x => x.Id == GrupoId) / 6 + 1;
+        Sucesso = "Grupo atualizado. Os itens e recebimentos foram preservados.";
+    });
+
+    private void PrepararEdicaoItem(LancamentoDto item)
+    {
+        if (Ocupado) return;
+        FecharDetalhes(); CadastroAberto = false; ItemEmEdicao = item; AdicionandoItem = true;
+        ItemAdicional = new() { Descricao = item.Descricao, Valor = item.ValorPrevisto,
+            Vencimento = item.DataVencimento?.ToDateTime(TimeOnly.MinValue), Observacoes = item.Observacoes };
+        CompetenciaAdicional = item.Competencia.ToDateTime(TimeOnly.MinValue); Erro = Sucesso = null;
+    }
+
+    private void PrepararExclusaoItem(LancamentoDto item)
+    {
+        if (Ocupado || item.ValorRealizado > 0) return;
+        FecharDetalhes(); ItemParaExcluir = item; Erro = Sucesso = null;
+    }
+
+    private void PrepararExclusaoGrupo()
+    {
+        if (Ocupado || GrupoAtual is null || GrupoAtual.TotalRecebido > 0) return;
+        FecharDetalhes(); GrupoParaExcluir = GrupoAtual; Erro = Sucesso = null;
+    }
+
+    private void CancelarExclusao()
+    {
+        if (Ocupado) return;
+        ItemParaExcluir = null; GrupoParaExcluir = null;
+    }
+
+    private Task ConfirmarExclusaoAsync() => ExecutarAsync(async () =>
+    {
+        bool excluindoGrupo = GrupoParaExcluir is not null;
+        if (excluindoGrupo) await Servico.ExcluirGrupoAsync(GrupoParaExcluir!.Id);
+        else if (ItemParaExcluir is not null) await Servico.ExcluirItemAsync(GrupoId, ItemParaExcluir.Id);
+        else return;
+        FecharDetalhes(); await CarregarAsync();
+        if (excluindoGrupo) PaginaGrupos = Math.Max(1, Grupos.ToList().FindIndex(x => x.Id == GrupoId) / 6 + 1);
+        Sucesso = excluindoGrupo ? "Grupo e seus itens excluídos." : "Item excluído. Totais atualizados.";
+    });
+
+    private void PrepararRecebimento(LancamentoDto item)
+    {
+        if (Ocupado) return;
+        FecharDetalhes(); ItemRecebimento = item; ValorRecebido = item.SaldoPendente;
+        DataRecebimento = DateTime.Today; ObservacaoRecebimento = ""; Erro = Sucesso = null;
+    }
+
+    private Task ReceberAsync() => ExecutarAsync(async () =>
+    {
+        if (ItemRecebimento is null) return;
+        await Servico.RegistrarRecebimentoAsync(GrupoId, ItemRecebimento.Id,
+            new(ValorRecebido, DateOnly.FromDateTime(DataRecebimento), ObservacaoRecebimento));
+        FecharDetalhes(); await CarregarAsync(); Sucesso = "Recebimento registrado. O saldo do grupo e do painel foi atualizado.";
+    });
+
+    private Task AbrirHistoricoAsync(LancamentoDto item) => ExecutarAsync(async () =>
+    {
+        FecharDetalhes(); Historico = await Lancamentos.HistoricoAsync(item.Id); ItemHistorico = item;
+    });
+
+    private sealed class ItemFormulario
+    {
+        public Guid Chave { get; } = Guid.NewGuid();
+        public string Descricao { get; set; } = "";
+        public decimal Valor { get; set; }
+        public DateTime? Vencimento { get; set; }
+        public string? Observacoes { get; set; }
+    }
+}

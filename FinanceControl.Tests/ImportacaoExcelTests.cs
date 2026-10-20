@@ -173,5 +173,36 @@ public sealed class ImportacaoExcelTests : IDisposable
         Assert.Equal(1, await db.Lancamentos.CountAsync());
     }
 
+    [Fact]
+    public async Task ReimportacaoMantemBloqueioDaOrigemAposDesmembramento()
+    {
+        var bytes = Planilha(ws => {
+            ws.Cell("A2").Clear(); ws.Cell("B2").Clear(); ws.Cell("C2").Clear();
+            ws.Cell("G2").Value = new DateTime(2026, 10, 20);
+            ws.Cell("H2").Value = "Receita consolidada fictícia";
+            ws.Cell("I2").Value = 300m;
+        });
+        var previa = await servico.PrepararPreviaAsync(bytes, "sintetica.xlsx", "OUTUBRO 2026", null);
+        Assert.Single(previa.Linhas);
+        await servico.ConfirmarAsync(previa.Linhas);
+        var lancamentos = new LancamentoService(db);
+        var original = Assert.Single(await lancamentos.ListarAsync(new(2026, 10, 1)));
+        var grupos = new ValoresReceberService(db, lancamentos);
+        await grupos.DesmembrarAsync(new(original.Id, "Pessoa fictícia", "Grupo revisado", [
+            new("Item fictício A", 100m, original.Competencia, null, null),
+            new("Item fictício B", 200m, original.Competencia, null, null)
+        ]));
+        var repetida = await servico.PrepararPreviaAsync(bytes, "sintetica.xlsx", "OUTUBRO 2026", null);
+        Assert.True(Assert.Single(repetida.Linhas).Duplicada);
+        repetida.Linhas[0].Selecionada = true;
+        Assert.Equal(1, (await servico.ConfirmarAsync(repetida.Linhas)).Duplicadas);
+        Assert.Equal(2, await db.Lancamentos.CountAsync());
+        // Excluir somente a primeira parte não deve liberar a linha consolidada para reimportação.
+        Assert.True(await grupos.ExcluirItemAsync((await grupos.ListarAsync())[0].Id, original.Id));
+        repetida = await servico.PrepararPreviaAsync(bytes, "sintetica.xlsx", "OUTUBRO 2026", null);
+        Assert.True(Assert.Single(repetida.Linhas).Duplicada);
+        Assert.Single(await db.RegistrosImportados.AsNoTracking().ToListAsync());
+    }
+
     public void Dispose() { db.Dispose(); conexao.Dispose(); }
 }

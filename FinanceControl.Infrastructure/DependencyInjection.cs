@@ -15,6 +15,7 @@ public static class DependencyInjection
         services.AddDbContext<FinanceDbContext>(options => options.UseSqlite(connection));
         services.AddScoped<ILancamentoService, LancamentoService>();
         services.AddScoped<IImportacaoExcelService, ImportacaoExcelService>();
+        services.AddScoped<IValoresReceberService, ValoresReceberService>();
         return services;
     }
 }

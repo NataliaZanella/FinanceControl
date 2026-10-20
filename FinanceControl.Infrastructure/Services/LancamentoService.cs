@@ -65,12 +65,16 @@ public sealed class LancamentoService(FinanceDbContext db) : ILancamentoService
     {
         var (descricao, categoria) = ValidarDados(request.Descricao, request.Categoria, request.Tipo,
             request.ValorPrevisto, request.Observacoes);
-        // A leitura e a escrita compartilham a transação.
-        using var transaction = await db.Database.BeginTransactionAsync(ct);
+        // Participa de uma transação externa no desmembramento; só confirma a própria transação.
+        using var transaction = db.Database.CurrentTransaction is null
+            ? await db.Database.BeginTransactionAsync(ct) : null;
         var lancamento = await db.Lancamentos.AsNoTracking().Include(x => x.Baixas)
             .SingleOrDefaultAsync(x => x.Id == lancamentoId, ct)
             ?? throw new KeyNotFoundException("Lançamento não encontrado.");
         var competencia = NormalizarMes(request.Competencia);
+        if (request.Tipo != TipoLancamento.Receita &&
+            await db.ItensGrupoReceber.AnyAsync(x => x.LancamentoId == lancamentoId, ct))
+            throw new ArgumentException("Um item de valores a receber deve permanecer como receita.");
         if (request.ValorPrevisto < lancamento.Baixas.Sum(x => x.Valor))
             throw new ArgumentException("O valor previsto não pode ser menor que o total já pago ou recebido.");
         if (lancamento.Baixas.Count > 0 &&
@@ -85,7 +89,7 @@ public sealed class LancamentoService(FinanceDbContext db) : ILancamentoService
             .SetProperty(x => x.Competencia, competencia)
             .SetProperty(x => x.DataVencimento, request.DataVencimento)
             .SetProperty(x => x.Observacoes, request.Observacoes == null ? null : request.Observacoes.Trim()), ct);
-        await transaction.CommitAsync(ct);
+        if (transaction is not null) await transaction.CommitAsync(ct);
         lancamento.Descricao = descricao;
         lancamento.Categoria = categoria;
         lancamento.Tipo = request.Tipo;
@@ -124,6 +128,16 @@ public sealed class LancamentoService(FinanceDbContext db) : ILancamentoService
         if (!await db.Lancamentos.AnyAsync(x => x.Id == lancamentoId, ct)) return false;
         if (await db.Baixas.AnyAsync(x => x.LancamentoId == lancamentoId, ct))
             throw new ArgumentException("Não é possível excluir um lançamento com pagamentos ou recebimentos registrados.");
+        var grupoId = await db.ItensGrupoReceber.Where(x => x.LancamentoId == lancamentoId)
+            .Select(x => (int?)x.GrupoReceberId).SingleOrDefaultAsync(ct);
+        if (grupoId.HasValue)
+        {
+            var proximo = await db.ItensGrupoReceber.Where(x => x.GrupoReceberId == grupoId.Value && x.LancamentoId != lancamentoId)
+                .OrderBy(x => x.Id).Select(x => (int?)x.LancamentoId).FirstOrDefaultAsync(ct);
+            if (proximo.HasValue)
+                await db.RegistrosImportados.Where(x => x.LancamentoId == lancamentoId)
+                    .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.LancamentoId, proximo.Value), ct);
+        }
         await db.Lancamentos.Where(x => x.Id == lancamentoId).ExecuteDeleteAsync(ct);
         await transaction.CommitAsync(ct);
         return true;

@@ -5,6 +5,7 @@ using FinanceControl.Infrastructure;
 using FinanceControl.Infrastructure.Data;
 using FinanceControl.SharedUI.Components.Pages;
 using FinanceControl.Web.Components;
+using FinanceControl.Web;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -40,6 +41,7 @@ using (var scope = app.Services.CreateScope())
         CREATE INDEX IF NOT EXISTS "IX_RegistrosImportados_LancamentoId"
         ON "RegistrosImportados" ("LancamentoId");
         """);
+    await AtualizacaoValoresReceber.AplicarAsync(db);
 }
 
 app.UseStaticFiles();
@@ -86,6 +88,7 @@ api.MapDelete("/{id:int}", async (int id, ILancamentoService servico, Cancellati
     catch (ArgumentException ex) { return Results.BadRequest(new { erro = ex.Message }); }
 });
 
+app.MapValoresReceber();
 
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode()

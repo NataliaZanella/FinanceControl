@@ -8,9 +8,26 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options)
     public DbSet<Lancamento> Lancamentos => Set<Lancamento>();
     public DbSet<Baixa> Baixas => Set<Baixa>();
     public DbSet<RegistroImportacao> RegistrosImportados => Set<RegistroImportacao>();
+    public DbSet<GrupoReceber> GruposReceber => Set<GrupoReceber>();
+    public DbSet<ItemGrupoReceber> ItensGrupoReceber => Set<ItemGrupoReceber>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<GrupoReceber>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Pessoa).IsRequired().HasMaxLength(120);
+            entity.Property(x => x.Descricao).IsRequired().HasMaxLength(180);
+            entity.HasMany(x => x.Itens).WithOne(x => x.GrupoReceber)
+                .HasForeignKey(x => x.GrupoReceberId).OnDelete(DeleteBehavior.Cascade);
+        });
+        modelBuilder.Entity<ItemGrupoReceber>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => x.LancamentoId).IsUnique();
+            entity.HasOne(x => x.Lancamento).WithMany().HasForeignKey(x => x.LancamentoId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
         modelBuilder.Entity<Lancamento>(entity =>
         {
             entity.HasKey(x => x.Id);
