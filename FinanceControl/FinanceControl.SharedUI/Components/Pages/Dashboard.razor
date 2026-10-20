@@ -1,0 +1,254 @@
+@page "/"
+@namespace FinanceControl.SharedUI.Components.Pages
+@using System.Globalization
+@inject ILancamentoService Servico
+
+<PageTitle>FinanceControl | Visão geral</PageTitle>
+
+<div class="app-shell">
+    <aside class="sidebar">
+        <div class="brand"><span class="brand-mark">F</span> Finance<span>Control</span></div>
+        <div class="side-label">ÁREA FINANCEIRA</div>
+        <a class="nav-selected nav-selected-link" href="/">◈ &nbsp; Visão geral</a>
+        <a class="nav-link" href="/importar">▤ &nbsp; Importar Excel</a>
+        <div class="sidebar-note">Seu controle financeiro em um só lugar.</div>
+        <div class="sidebar-foot">C# · Blazor · SQLite<br />Versão local de desenvolvimento</div>
+    </aside>
+
+    <main class="main-content">
+        <header class="topbar">
+            <div>
+                <div class="eyebrow">PAINEL FINANCEIRO</div>
+                <h1>Seu dinheiro, com clareza. <span>✦</span></h1>
+                <p>Controle receitas, despesas e pagamentos sem depender de várias abas.</p>
+            </div>
+            <div class="month-filter">
+                <label for="mes">Mês de referência</label>
+                <input id="mes" type="month" @bind="MesSelecionado" @bind:format="yyyy-MM" @bind:after="CarregarAsync" />
+            </div>
+        </header>
+
+        @if (!string.IsNullOrWhiteSpace(MensagemErro))
+        {
+            <div class="alert alert-error" role="alert">@MensagemErro <button type="button" @onclick="() => MensagemErro = null">×</button></div>
+        }
+        @if (!string.IsNullOrWhiteSpace(MensagemSucesso))
+        {
+            <div class="alert alert-success" role="status">@MensagemSucesso <button type="button" @onclick="() => MensagemSucesso = null">×</button></div>
+        }
+
+        <section class="stats-grid" aria-label="Resumo do mês">
+            <article class="stat-card stat-income">
+                <div class="stat-label">Receitas recebidas <span>↗</span></div>
+                <div class="stat-value">@Moeda(Resumo?.ReceitasRecebidas ?? 0)</div>
+                <div class="stat-sub">Previstas: @Moeda(Resumo?.ReceitasPrevistas ?? 0)</div>
+            </article>
+            <article class="stat-card stat-expense">
+                <div class="stat-label">Despesas pagas <span>↘</span></div>
+                <div class="stat-value">@Moeda(Resumo?.DespesasPagas ?? 0)</div>
+                <div class="stat-sub">Previstas: @Moeda(Resumo?.DespesasPrevistas ?? 0)</div>
+            </article>
+            <article class="stat-card stat-balance">
+                <div class="stat-label">Saldo realizado <span>◈</span></div>
+                <div class="stat-value">@Moeda(Resumo?.SaldoRealizado ?? 0)</div>
+                <div class="stat-sub">Recebido menos pago neste mês de competência</div>
+            </article>
+            <article class="stat-card stat-pending">
+                <div class="stat-label">Contas a pagar <span>◷</span></div>
+                <div class="stat-value">@Moeda(Resumo?.DespesasPendentes ?? 0)</div>
+                <div class="stat-sub">Ainda a receber: @Moeda(Resumo?.ReceitasPendentes ?? 0)</div>
+            </article>
+        </section>
+
+        <div class="content-grid">
+            <section class="panel new-entry">
+                <div class="panel-heading"><div><div class="section-kicker">NOVO REGISTRO</div><h2>Adicionar lançamento</h2></div><div class="panel-icon">＋</div></div>
+                <form @onsubmit="AdicionarAsync" @onsubmit:preventDefault>
+                    <div class="form-field"><label for="descricao">Descrição</label><input id="descricao" placeholder="Ex.: Aluguel, serviço de pintura..." maxlength="180" required @bind="NovoDescricao" /></div>
+                    <div class="form-pair">
+                        <div class="form-field"><label for="tipo">Tipo</label>
+                            <select id="tipo" @bind="NovoTipo"><option value="Despesa">Despesa</option><option value="Receita">Receita</option></select></div>
+                        <div class="form-field"><label for="valor">Valor previsto (R$)</label><input id="valor" type="number" min="0.01" step="0.01" required @bind="NovoValor" /></div>
+                    </div>
+                    <div class="form-field"><label for="categoria">Categoria</label><input id="categoria" list="categorias" maxlength="80" required @bind="NovaCategoria" />
+                        <datalist id="categorias"><option value="Moradia" /><option value="Educação" /><option value="Transporte" /><option value="Saúde" /><option value="Alimentação" /><option value="Cartão de crédito" /><option value="Empréstimos" /><option value="Trabalhos e eventos" /><option value="Salário" /><option value="Impostos e MEI" /><option value="Outros" /></datalist>
+                    </div>
+                    <div class="form-field"><label for="vencimento">Vencimento (opcional)</label><input id="vencimento" type="date" @bind="NovoVencimento" /></div>
+                    <div class="form-field"><label for="observacoes">Observações (opcional)</label><textarea id="observacoes" rows="3" maxlength="1000" placeholder="Ex.: parcela 10 de 12" @bind="NovasObservacoes"></textarea></div>
+                    <button class="primary-btn" type="submit" disabled="@Salvando">@(Salvando ? "Salvando..." : "Adicionar lançamento") <span>→</span></button>
+                </form>
+                <p class="field-note">O lançamento é inicialmente previsto. Registre o pagamento ou recebimento depois.</p>
+            </section>
+
+            <section class="panel entries-panel">
+                <div class="panel-heading"><div><div class="section-kicker">ACOMPANHAMENTO</div><h2>Lançamentos do mês</h2></div><span class="count-pill">@Lancamentos.Count registros</span></div>
+                @if (Carregando)
+                {
+                    <p class="empty-state">Carregando lançamentos...</p>
+                }
+                else if (Lancamentos.Count == 0)
+                {
+                    <div class="empty-state"><div class="empty-illustration">▤</div><strong>Sem registros neste mês</strong><p>Adicione sua primeira receita ou despesa pelo formulário ao lado.</p></div>
+                }
+                else
+                {
+                    <div class="table-wrap">
+                        <table>
+                            <thead><tr><th>Descrição</th><th>Tipo</th><th>Previsto</th><th>Realizado</th><th>Pendente</th><th>Situação</th><th>Ação</th></tr></thead>
+                            <tbody>
+                                @foreach (var item in Lancamentos)
+                                {
+                                    <tr>
+                                        <td><strong>@item.Descricao</strong><div class="small-muted">@item.Categoria @if (item.DataVencimento.HasValue) { <span> · @item.DataVencimento.Value.ToString("dd/MM")</span> }</div></td>
+                                        <td><span class="type-tag @(item.Tipo == TipoLancamento.Receita ? "type-income" : "type-expense")">@(item.Tipo == TipoLancamento.Receita ? "Receita" : "Despesa")</span></td>
+                                        <td>@Moeda(item.ValorPrevisto)</td><td>@Moeda(item.ValorRealizado)</td><td>@Moeda(item.SaldoPendente)</td>
+                                        <td><span class="status-tag @item.Situacao.ToLowerInvariant()">@item.Situacao</span></td>
+                                        <td>
+                                            @if (item.SaldoPendente > 0) { <button class="mini-btn" title="Registrar pagamento ou recebimento" @onclick="() => PrepararBaixa(item)">Registrar</button> }
+                                            @if (item.ValorRealizado > 0) { <button class="mini-btn" @onclick="() => AbrirHistoricoAsync(item)">Histórico</button> }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+
+                @if (LancamentoHistorico is not null)
+                {
+                    <div class="payment-box">
+                        <div class="payment-header"><h3>Histórico: @LancamentoHistorico.Descricao</h3><button class="icon-close" type="button" @onclick="FecharHistorico">×</button></div>
+                        @if (Historico.Count == 0) { <p class="small-muted">Sem pagamentos registrados.</p> }
+                        else
+                        {
+                            <ul class="history-list">
+                            @foreach (var baixa in Historico)
+                            {
+                                <li><span>@baixa.Data.ToString("dd/MM/yyyy") <small>@baixa.Observacao</small></span><strong>@Moeda(baixa.Valor)</strong></li>
+                            }
+                            </ul>
+                        }
+                    </div>
+                }
+
+                @if (LancamentoParaBaixa is not null)
+                {
+                    <div class="payment-box">
+                        <div class="payment-header"><h3>@(LancamentoParaBaixa.Tipo == TipoLancamento.Despesa ? "Registrar pagamento" : "Registrar recebimento")</h3><button class="icon-close" type="button" @onclick="CancelarBaixa">×</button></div>
+                        <p class="small-muted">@LancamentoParaBaixa.Descricao · Saldo pendente: <strong>@Moeda(LancamentoParaBaixa.SaldoPendente)</strong></p>
+                        <form @onsubmit="SalvarBaixaAsync" @onsubmit:preventDefault>
+                            <div class="form-pair"><div class="form-field"><label for="baixa-valor">Valor (R$)</label><input id="baixa-valor" type="number" min="0.01" step="0.01" max="@LancamentoParaBaixa.SaldoPendente.ToString(CultureInfo.InvariantCulture)" required @bind="ValorBaixa" /></div>
+                            <div class="form-field"><label for="baixa-data">Data</label><input id="baixa-data" type="date" required @bind="DataBaixa" /></div></div>
+                            <div class="form-field"><label for="baixa-obs">Observação</label><input id="baixa-obs" maxlength="500" placeholder="Opcional" @bind="ObservacaoBaixa" /></div>
+                            <button class="primary-btn" type="submit" disabled="@Salvando">Salvar baixa</button>
+                        </form>
+                    </div>
+                }
+            </section>
+        </div>
+        <footer class="footer">FinanceControl • Primeira etapa do projeto • Dados armazenados localmente em SQLite</footer>
+    </main>
+</div>
+
+@code {
+    private static readonly CultureInfo Brasil = CultureInfo.GetCultureInfo("pt-BR");
+    private static string Moeda(decimal valor) => valor.ToString("C2", Brasil);
+    private DateTime MesSelecionado = new(DateTime.Today.Year, DateTime.Today.Month, 1);
+    private List<LancamentoDto> Lancamentos = [];
+    private ResumoMensalDto? Resumo;
+    private string? MensagemErro;
+    private string? MensagemSucesso;
+    private bool Carregando;
+    private bool Salvando;
+    private string NovoDescricao = "";
+    private string NovaCategoria = "Outros";
+    private TipoLancamento NovoTipo = TipoLancamento.Despesa;
+    private decimal NovoValor;
+    private DateTime? NovoVencimento;
+    private string NovasObservacoes = "";
+    private LancamentoDto? LancamentoParaBaixa;
+    private LancamentoDto? LancamentoHistorico;
+    private IReadOnlyList<BaixaDto> Historico = [];
+    private decimal ValorBaixa;
+    private DateTime DataBaixa = DateTime.Today;
+    private string ObservacaoBaixa = "";
+
+    protected override async Task OnInitializedAsync() => await CarregarAsync();
+
+    private DateOnly MesAtual() => new(MesSelecionado.Year, MesSelecionado.Month, 1);
+
+    private async Task CarregarAsync()
+    {
+        var mes = MesAtual();
+        Carregando = true;
+        MensagemErro = null;
+        try
+        {
+            Lancamentos = (await Servico.ListarAsync(mes)).ToList();
+            Resumo = await Servico.ResumoAsync(mes);
+        }
+        catch (Exception ex) { MensagemErro = ex.Message; }
+        finally { Carregando = false; }
+    }
+
+    private async Task AdicionarAsync()
+    {
+        if (Salvando) return;
+        Salvando = true;
+        MensagemErro = MensagemSucesso = null;
+        try
+        {
+            DateOnly? vencimento = NovoVencimento.HasValue
+                ? DateOnly.FromDateTime(NovoVencimento.Value)
+                : null;
+            await Servico.CriarAsync(new CriarLancamentoRequest(NovoDescricao, NovaCategoria, NovoTipo,
+                NovoValor, MesAtual(), vencimento, NovasObservacoes));
+            NovoDescricao = NovasObservacoes = "";
+            NovoVencimento = null;
+            NovoValor = 0;
+            MensagemSucesso = "Lançamento cadastrado!";
+            await CarregarAsync();
+        }
+        catch (Exception ex) { MensagemErro = ex.Message; }
+        finally { Salvando = false; }
+    }
+
+    private async Task AbrirHistoricoAsync(LancamentoDto item)
+    {
+        try
+        {
+            Historico = await Servico.HistoricoAsync(item.Id);
+            LancamentoHistorico = item;
+        }
+        catch (Exception ex) { MensagemErro = ex.Message; }
+    }
+    private void FecharHistorico() => LancamentoHistorico = null;
+
+    private void PrepararBaixa(LancamentoDto item)
+    {
+        LancamentoParaBaixa = item;
+        ValorBaixa = item.SaldoPendente;
+        DataBaixa = DateTime.Today;
+        ObservacaoBaixa = "";
+        MensagemErro = null;
+    }
+    private void CancelarBaixa() => LancamentoParaBaixa = null;
+
+    private async Task SalvarBaixaAsync()
+    {
+        if (Salvando || LancamentoParaBaixa is null) return;
+        Salvando = true;
+        MensagemErro = MensagemSucesso = null;
+        try
+        {
+            var data = DateOnly.FromDateTime(DataBaixa);
+            await Servico.RegistrarBaixaAsync(LancamentoParaBaixa.Id,
+                new RegistrarBaixaRequest(ValorBaixa, data, ObservacaoBaixa));
+            LancamentoParaBaixa = null;
+            MensagemSucesso = "Pagamento/recebimento registrado com sucesso!";
+            await CarregarAsync();
+        }
+        catch (Exception ex) { MensagemErro = ex.Message; }
+        finally { Salvando = false; }
+    }
+}

@@ -1,0 +1,15 @@
+<Router AppAssembly="@typeof(Program).Assembly" AdditionalAssemblies="@SharedAssemblies">
+    <Found Context="routeData">
+        <RouteView RouteData="@routeData" />
+        <FocusOnNavigate RouteData="@routeData" Selector="h1" />
+    </Found>
+    <NotFound>
+        <h1>Página não encontrada</h1>
+        <p><a href="/">Voltar ao FinanceControl</a></p>
+    </NotFound>
+</Router>
+
+@code {
+    private static readonly System.Reflection.Assembly[] SharedAssemblies =
+        [typeof(Dashboard).Assembly];
+}

@@ -1,0 +1,7 @@
+<Solution>
+  <Project Path="FinanceControl.Domain/FinanceControl.Domain.csproj" />
+  <Project Path="FinanceControl.Application/FinanceControl.Application.csproj" />
+  <Project Path="FinanceControl.Infrastructure/FinanceControl.Infrastructure.csproj" />
+  <Project Path="FinanceControl.SharedUI/FinanceControl.SharedUI.csproj" />
+  <Project Path="FinanceControl.Web/FinanceControl.Web.csproj" />
+</Solution>
