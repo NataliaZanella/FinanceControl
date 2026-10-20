@@ -15,11 +15,13 @@ Este roteiro é uma proposta de prioridades, não uma ordem para o Codex impleme
 **Aceite:** build sem erros; seleção de aba, revisão, importação confirmada e reimportação sinalizando duplicata; nenhum pagamento presumido; aba dívidas bloqueada. Usar planilha sintética nos testes automáticos. Para teste manual com dados reais, pedir backup e revisão humana antes de confirmar gravação.
 
 ## Fase 2 — Operações de lançamentos e robustez
+**Progresso:** edição e exclusão com confirmação implementadas em `developer`; exclusão com baixas e alterações de tipo/competência com baixas são bloqueadas. Filtros mensais por busca, tipo, situação e categoria implementados, com seis resultados por página e indicadores do mês inteiro. Testes sintéticos e endpoints/HTML HTTP verificados. Roteiros em `docs/edicao-exclusao.md` e `docs/filtros-lancamentos.md`. Cadastro de categorias/contas permanece para incremento posterior.
 **Objetivo:** edição, exclusão com confirmação, filtros/categorias, mensagens claras de validação, testes de regras financeiras.
 
 **Aceite:** não perder baixas existentes nem criar valores negativos/inconsistentes; explicar como reverter mudanças.
 
 ## Fase 3 — Dívidas, parcelamento, cartão e recorrência
+**Progresso parcial:** grupos de valores a receber por pessoa implementados, com itens individuais, saldo, recebimentos parciais e edição/exclusão integrados ao painel. Desmembramento revisado de receitas sem baixas implementado, preservando total mensal e origem de importação; operação em dados reais depende de conferência humana. Atualização aditiva com backup validada somente em bancos sintéticos. Juros, estornos, parcelas, cartões e recorrências continuam pendentes. Consulte `docs/valores-a-receber.md`.
 **Objetivo:** definir entidades e jornadas de dívida, parcelas, faturas/cartões e contas recorrentes. **Não tentar deduzir estrutura da aba de dívidas sem revisão.**
 
 **Aceite:** regras claras para vencimento, parcela paga, saldo, juros e estorno; reconciliação sem contagem dupla.

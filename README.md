@@ -9,10 +9,14 @@
 - Registro de **vários pagamentos** (despesas) ou recebimentos (receitas) no mesmo lançamento.
 - Situações: `Pendente`, `Parcial` e `Quitado`.
 - Histórico das baixas, com data, valor e observações.
+- Edição de lançamentos preservando baixas e origem da importação; exclusão com confirmação para lançamentos sem baixas. Veja `docs/edicao-exclusao.md`.
 - Painel mensal: receitas previstas/recebidas, despesas previstas/pagas, pendências e saldo realizado.
+- Filtros da tabela mensal por descrição/observação, tipo, situação e categoria, com seis resultados por página. Indicadores continuam considerando o mês inteiro. Veja `docs/filtros-lancamentos.md`.
 - API HTTP local para futuramente conectar a aplicação Windows.
 - Banco SQLite criado automaticamente na primeira execução.
 - **Importação XLSX:** seleção da aba, prévia com checkboxes, ajustes de datas, detecção de duplicidade e confirmação com transação. Abra `/importar`.
+- **Valores a receber:** grupos por pessoa, itens individuais, totais, recebimentos parciais e edição/exclusão de grupos e itens, reutilizando os lançamentos do painel. Abra `/valores-a-receber`; veja `docs/valores-a-receber.md` antes de converter um registro antigo.
+- **Desmembramento revisado:** transforma uma receita consolidada sem recebimentos em itens separados, mantendo total mensal e origem de importação. A soma deve bater exatamente e a confirmação é manual.
 
 **Ainda não implementado:** login, cartão/fatura, parcelamentos automáticos, despesas recorrentes, backup pela interface, relatórios avançados, autenticação, aplicativo Windows e operações em modo offline. Esses itens ficam para as próximas etapas.
 
@@ -64,6 +68,8 @@ A planilha Excel original **não é alterada** nem copiada para o projeto. A imp
 
 **Atenção ao banco existente:** ao atualizar o sistema, mantenha seu `financecontrol.db`. A nova tabela de origens importadas será criada automaticamente, sem apagar as outras.
 
+O módulo de valores a receber acrescenta duas tabelas de agrupamento. Em bancos anteriores, gera backup SQLite consistente antes de criá-las, no mesmo diretório do banco. Pare instâncias antigas e mantenha também seu backup próprio antes de atualizar. Detalhes e retorno de versão em `docs/valores-a-receber.md`.
+
 ## 5. Organização da solução
 
 ```text
@@ -88,9 +94,10 @@ Para o futuro **Desktop com .NET MAUI Blazor Hybrid**, registraremos uma impleme
 | GET | `/api/lancamentos?mes=2026-10` | Lista lançamentos do mês |
 | GET | `/api/lancamentos/resumo?mes=2026-10` | Resumo financeiro |
 | POST | `/api/lancamentos` | Cria lançamento |
+| PUT | `/api/lancamentos/{id}` | Atualiza os campos do lançamento, preservando baixas |
 | POST | `/api/lancamentos/{id}/baixas` | Registra pagamento/recebimento |
 | GET | `/api/lancamentos/{id}/baixas` | Histórico do lançamento |
-| DELETE | `/api/lancamentos/{id}` | Exclui lançamento e suas baixas (**irreversível**) |
+| DELETE | `/api/lancamentos/{id}` | Exclui lançamento sem baixas e sua origem de importação (**irreversível**); bloqueado quando há baixas |
 
 Exemplo de cadastro no PowerShell (o campo `tipo` vale `1` para despesa ou `2` para receita):
 
@@ -121,7 +128,7 @@ Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:5178/api/lancamentos' `
 ## 8. Próximos incrementos sugeridos
 
 1. Evoluir a importação com correção de valores, categorias e importação específica da aba de dívidas.
-2. Cadastro de contas e categorias + edição e exclusão com confirmação.
+2. Cadastro de contas e categorias + filtros; edição e exclusão com confirmação já disponíveis.
 3. Dívidas, cartões, parcelas e lançamentos recorrentes.
 4. Banco, saldo inicial, fluxo de caixa real e relatórios por período.
 5. Login e controle de acesso antes de permitir conexão por outros dispositivos.
