@@ -98,7 +98,17 @@
             </section>
 
             <section class="panel entries-panel">
-                <div class="panel-heading"><div><div class="section-kicker">ACOMPANHAMENTO</div><h2>Lançamentos do mês</h2></div><span class="count-pill" role="status">@Lancamentos.Count registros</span></div>
+                <div class="panel-heading"><div><div class="section-kicker">ACOMPANHAMENTO</div><h2>Lançamentos do mês</h2></div><span class="count-pill" role="status">@LancamentosFiltrados.Count de @Lancamentos.Count registros</span></div>
+                <fieldset class="entry-fields" disabled="@(Salvando || Carregando)">
+                    <legend class="sr-only">Filtrar lançamentos do mês</legend>
+                    <div class="entries-filters">
+                        <div class="form-field filter-search"><label for="filtro-busca">Buscar</label><input id="filtro-busca" type="search" maxlength="180" placeholder="Descrição ou observação…" @bind="Filtros.Busca" @bind:event="oninput" @bind:after="AplicarFiltros" /></div>
+                        <div class="form-field"><label for="filtro-tipo">Tipo</label><select id="filtro-tipo" @bind="Filtros.Tipo" @bind:after="AplicarFiltros"><option value="">Todos</option><option value="Despesa">Despesas</option><option value="Receita">Receitas</option></select></div>
+                        <div class="form-field"><label for="filtro-situacao">Situação</label><select id="filtro-situacao" @bind="Filtros.Situacao" @bind:after="AplicarFiltros"><option value="">Todas</option><option value="Pendente">Pendente</option><option value="Parcial">Parcial</option><option value="Quitado">Quitado</option></select></div>
+                        <div class="form-field"><label for="filtro-categoria">Categoria</label><select id="filtro-categoria" @bind="Filtros.Categoria" @bind:after="AplicarFiltros"><option value="">Todas</option>@foreach (var categoria in CategoriasDoMes) { <option value="@categoria">@categoria</option> }</select></div>
+                    </div>
+                    <div class="filters-caption"><p>Os filtros alteram somente a tabela. Os indicadores acima mostram o mês inteiro.</p><button class="mini-btn" type="button" disabled="@(!Filtros.Ativo)" @onclick="LimparFiltros">Limpar filtros</button></div>
+                </fieldset>
                 @if (Carregando)
                 {
                     <p class="empty-state">Carregando lançamentos...</p>
@@ -106,6 +116,10 @@
                 else if (Lancamentos.Count == 0)
                 {
                     <div class="empty-state"><div class="empty-illustration">▤</div><strong>Sem registros neste mês</strong><p>Adicione sua primeira receita ou despesa pelo formulário ao lado.</p></div>
+                }
+                else if (LancamentosFiltrados.Count == 0)
+                {
+                    <div class="empty-state" role="status"><strong>Nenhum lançamento encontrado</strong><p>Altere a busca ou limpe os filtros para ver os registros deste mês.</p></div>
                 }
                 else
                 {
@@ -132,7 +146,7 @@
                         </table>
                     </div>
                     <nav class="entries-pagination" aria-label="Paginação dos lançamentos">
-                        <span class="pagination-range">@((PaginaAtual - 1) * ItensPorPagina + 1)–@Math.Min(PaginaAtual * ItensPorPagina, Lancamentos.Count) de @Lancamentos.Count lançamentos encontrados</span>
+                        <span class="pagination-range">@((PaginaAtual - 1) * ItensPorPagina + 1)–@Math.Min(PaginaAtual * ItensPorPagina, LancamentosFiltrados.Count) de @LancamentosFiltrados.Count lançamentos encontrados</span>
                         <div class="pagination-controls">
                             <button class="mini-btn" type="button" disabled="@(Salvando || Carregando || PaginaAtual == 1)" @onclick="() => MudarPagina(PaginaAtual - 1)">← Anterior</button>
                             <span role="status" aria-live="polite">Página @PaginaAtual de @TotalPaginas</span>
@@ -185,10 +199,15 @@
     private static string Moeda(decimal valor) => valor.ToString("C2", Brasil);
     private DateTime MesSelecionado = new(DateTime.Today.Year, DateTime.Today.Month, 1);
     private List<LancamentoDto> Lancamentos = [];
+    private FiltroLancamentos Filtros = new();
+    private IReadOnlyList<LancamentoDto> LancamentosFiltrados = [];
+    private IEnumerable<string> CategoriasDoMes => Lancamentos.Select(x => x.Categoria.Trim())
+        .Append(Filtros.Categoria.Trim()).Where(x => x.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase)
+        .OrderBy(x => x, StringComparer.Create(Brasil, true));
     private const int ItensPorPagina = 6;
     private int PaginaAtual = 1;
-    private int TotalPaginas => Math.Max(1, (Lancamentos.Count + ItensPorPagina - 1) / ItensPorPagina);
-    private IEnumerable<LancamentoDto> LancamentosDaPagina => Lancamentos.Skip((PaginaAtual - 1) * ItensPorPagina).Take(ItensPorPagina);
+    private int TotalPaginas => Math.Max(1, (LancamentosFiltrados.Count + ItensPorPagina - 1) / ItensPorPagina);
+    private IEnumerable<LancamentoDto> LancamentosDaPagina => LancamentosFiltrados.Skip((PaginaAtual - 1) * ItensPorPagina).Take(ItensPorPagina);
     private ResumoMensalDto? Resumo;
     private string? MensagemErro;
     private string? MensagemSucesso;
@@ -222,7 +241,7 @@
         try
         {
             Lancamentos = (await Servico.ListarAsync(mes)).ToList();
-            PaginaAtual = Math.Clamp(PaginaAtual, 1, TotalPaginas);
+            AtualizarFiltrados();
             Resumo = await Servico.ResumoAsync(mes);
         }
         catch (Exception ex) { MensagemErro = ex.Message; }
@@ -250,7 +269,7 @@
                 var atualizado = await Servico.AtualizarAsync(LancamentoEmEdicao.Id,
                     new AtualizarLancamentoRequest(NovoDescricao, NovaCategoria, NovoTipo, NovoValor,
                         DateOnly.FromDateTime(CompetenciaEdicao), vencimento, NovasObservacoes));
-                if (atualizado.Competencia != MesAtual()) PaginaAtual = 1;
+                if (atualizado.Competencia != MesAtual()) { PaginaAtual = 1; Filtros = new(); }
                 MesSelecionado = atualizado.Competencia.ToDateTime(TimeOnly.MinValue);
                 MensagemSucesso = "Lançamento atualizado! As baixas foram preservadas.";
             }
@@ -324,8 +343,29 @@
     {
         FecharOperacoes();
         PaginaAtual = 1;
+        Filtros = new();
         MensagemSucesso = null;
         await CarregarAsync();
+    }
+
+    private void AtualizarFiltrados()
+    {
+        LancamentosFiltrados = Filtros.Aplicar(Lancamentos);
+        PaginaAtual = Math.Clamp(PaginaAtual, 1, TotalPaginas);
+    }
+
+    private void AplicarFiltros()
+    {
+        PaginaAtual = 1;
+        LancamentoParaBaixa = LancamentoHistorico = null;
+        Historico = [];
+        AtualizarFiltrados();
+    }
+
+    private void LimparFiltros()
+    {
+        Filtros = new();
+        AplicarFiltros();
     }
 
     private void MudarPagina(int pagina)
