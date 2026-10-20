@@ -1,0 +1,84 @@
+@using System.Globalization
+@using Microsoft.JSInterop
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+
+<dialog @ref="Janela" class="confirmation-dialog" aria-labelledby="titulo-exclusao" aria-describedby="aviso-exclusao" aria-busy="@Processando">
+    @if (Exibir)
+    {
+    <h3 id="titulo-exclusao">Confirmar exclusão</h3>
+    @if (!string.IsNullOrWhiteSpace(Descricao))
+    {
+        <p>@Descricao</p>
+    }
+    else if (Lancamento is not null)
+    {
+        <p>Excluir <strong>@Lancamento.Descricao</strong> de <strong>@Lancamento.ValorPrevisto.ToString("C2", CultureInfo.GetCultureInfo("pt-BR"))</strong>, competência @Lancamento.Competencia.ToString("MM/yyyy")?</p>
+    }
+    <p id="aviso-exclusao">@(Aviso ?? "Esta ação é permanente. Se o lançamento foi importado, sua origem também será removida e a linha poderá ser importada novamente.")</p>
+    @if (!string.IsNullOrWhiteSpace(Erro))
+    {
+        <div class="alert alert-error" role="alert">@Erro</div>
+    }
+    <div class="entry-actions">
+        <button class="mini-btn" type="button" autofocus disabled="@Processando" @onclick="SolicitarCancelamento">Cancelar</button>
+        <button class="mini-btn danger-btn" type="button" disabled="@Processando" @onclick="Confirmar">@(Processando ? "Excluindo..." : "Confirmar exclusão permanente")</button>
+    </div>
+    }
+</dialog>
+
+@code {
+    [Parameter] public LancamentoDto? Lancamento { get; set; }
+    [Parameter] public string? Descricao { get; set; }
+    [Parameter] public string? Aviso { get; set; }
+    [Parameter] public bool Processando { get; set; }
+    [Parameter] public string? Erro { get; set; }
+    [Parameter] public EventCallback Cancelar { get; set; }
+    [Parameter] public EventCallback Confirmar { get; set; }
+    private ElementReference Janela;
+    private IJSObjectReference? Modulo;
+    private DotNetObjectReference<ConfirmacaoExclusao>? Referencia;
+    private bool Aberta;
+    private bool Exibir => Lancamento is not null || !string.IsNullOrWhiteSpace(Descricao);
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            Modulo = await JS.InvokeAsync<IJSObjectReference>("import", "./_content/FinanceControl.SharedUI/confirmacao-exclusao.js");
+            Referencia = DotNetObjectReference.Create(this);
+        }
+        if (Modulo is null) return;
+        if (Exibir && !Aberta)
+        {
+            Aberta = true;
+            await Modulo.InvokeVoidAsync("abrir", Janela, Referencia);
+        }
+        else if (!Exibir && Aberta)
+        {
+            Aberta = false;
+            await Modulo.InvokeVoidAsync("fechar", Janela);
+        }
+    }
+
+    [JSInvokable]
+    public async Task SolicitarCancelamento()
+    {
+        if (!Processando) await Cancelar.InvokeAsync();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (Modulo is not null)
+        {
+            try
+            {
+                await Modulo.InvokeVoidAsync("fechar", Janela);
+                await Modulo.DisposeAsync();
+            }
+            catch (JSDisconnectedException) { }
+            catch (TaskCanceledException) { }
+        }
+        Referencia?.Dispose();
+    }
+}

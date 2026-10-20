@@ -18,6 +18,16 @@ public sealed record RegistrarBaixaRequest(
     string? Observacao
 );
 
+public sealed record AtualizarLancamentoRequest(
+    string Descricao,
+    string Categoria,
+    TipoLancamento Tipo,
+    decimal ValorPrevisto,
+    DateOnly Competencia,
+    DateOnly? DataVencimento,
+    string? Observacoes
+);
+
 public sealed record BaixaDto(int Id, decimal Valor, DateOnly Data, string? Observacao);
 
 public sealed record LancamentoDto(

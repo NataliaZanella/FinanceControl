@@ -158,5 +158,20 @@ public sealed class ImportacaoExcelTests : IDisposable
         Assert.Equal(1, await db.Lancamentos.CountAsync());
     }
 
+    [Fact]
+    public async Task EditarImportadoPreservaBloqueioPorOrigem()
+    {
+        var bytes = Planilha();
+        var previa = await servico.PrepararPreviaAsync(bytes, "sintetica.xlsx", "OUTUBRO 2026", null);
+        await servico.ConfirmarAsync(previa.Linhas);
+        var lancamentos = new LancamentoService(db);
+        var item = Assert.Single(await lancamentos.ListarAsync(new(2026, 10, 1)));
+        await lancamentos.AtualizarAsync(item.Id, new("Descrição corrigida", item.Categoria, item.Tipo,
+            150m, item.Competencia, item.DataVencimento, item.Observacoes));
+        var repetida = await servico.PrepararPreviaAsync(bytes, "sintetica.xlsx", "OUTUBRO 2026", null);
+        Assert.True(Assert.Single(repetida.Linhas).Duplicada);
+        Assert.Equal(1, await db.Lancamentos.CountAsync());
+    }
+
     public void Dispose() { db.Dispose(); conexao.Dispose(); }
 }

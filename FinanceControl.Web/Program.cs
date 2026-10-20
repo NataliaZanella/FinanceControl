@@ -74,8 +74,18 @@ api.MapPost("/{id:int}/baixas", async (int id, RegistrarBaixaRequest entrada, IL
     catch (KeyNotFoundException ex) { return Results.NotFound(new { erro = ex.Message }); }
     catch (ArgumentException ex) { return Results.BadRequest(new { erro = ex.Message }); }
 });
+api.MapPut("/{id:int}", async (int id, AtualizarLancamentoRequest entrada, ILancamentoService servico, CancellationToken ct) =>
+{
+    try { return Results.Ok(await servico.AtualizarAsync(id, entrada, ct)); }
+    catch (KeyNotFoundException ex) { return Results.NotFound(new { erro = ex.Message }); }
+    catch (ArgumentException ex) { return Results.BadRequest(new { erro = ex.Message }); }
+});
 api.MapDelete("/{id:int}", async (int id, ILancamentoService servico, CancellationToken ct) =>
-    await servico.ExcluirAsync(id, ct) ? Results.NoContent() : Results.NotFound());
+{
+    try { return await servico.ExcluirAsync(id, ct) ? Results.NoContent() : Results.NotFound(); }
+    catch (ArgumentException ex) { return Results.BadRequest(new { erro = ex.Message }); }
+});
+
 
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode()

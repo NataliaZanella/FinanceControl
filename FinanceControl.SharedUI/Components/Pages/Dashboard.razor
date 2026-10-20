@@ -1,6 +1,7 @@
 @page "/"
 @namespace FinanceControl.SharedUI.Components.Pages
 @using System.Globalization
+@using FinanceControl.SharedUI.Components
 @inject ILancamentoService Servico
 
 <PageTitle>FinanceControl | Visão geral</PageTitle>
@@ -24,7 +25,7 @@
             </div>
             <div class="month-filter">
                 <label for="mes">Mês de referência</label>
-                <input id="mes" type="month" @bind="MesSelecionado" @bind:format="yyyy-MM" @bind:after="CarregarAsync" />
+                <input id="mes" type="month" @bind="MesSelecionado" @bind:format="yyyy-MM" @bind:after="TrocarMesAsync" disabled="@(Salvando || Carregando)" />
             </div>
         </header>
 
@@ -62,26 +63,40 @@
 
         <div class="content-grid">
             <section class="panel new-entry">
-                <div class="panel-heading"><div><div class="section-kicker">NOVO REGISTRO</div><h2>Adicionar lançamento</h2></div><div class="panel-icon">＋</div></div>
-                <form @onsubmit="AdicionarAsync" @onsubmit:preventDefault>
+                <div class="panel-heading"><div><div class="section-kicker">@(LancamentoEmEdicao is null ? "NOVO REGISTRO" : "EDIÇÃO")</div><h2>@(LancamentoEmEdicao is null ? "Adicionar lançamento" : "Editar lançamento")</h2></div><div class="panel-icon">@(LancamentoEmEdicao is null ? "＋" : "✎")</div></div>
+                @if (LancamentoEmEdicao is { ValorRealizado: > 0 })
+                {
+                    <p class="import-info">Já pago/recebido: <strong>@Moeda(LancamentoEmEdicao.ValorRealizado)</strong>. O valor previsto deve cobrir esse total. Tipo e competência são preservados.</p>
+                }
+                <form @onsubmit="SalvarLancamentoAsync" @onsubmit:preventDefault>
+                    <fieldset class="entry-fields" disabled="@(Salvando || Carregando)">
                     <div class="form-field"><label for="descricao">Descrição</label><input id="descricao" placeholder="Ex.: Aluguel, serviço de pintura..." maxlength="180" required @bind="NovoDescricao" /></div>
                     <div class="form-pair">
                         <div class="form-field"><label for="tipo">Tipo</label>
-                            <select id="tipo" @bind="NovoTipo"><option value="Despesa">Despesa</option><option value="Receita">Receita</option></select></div>
+                            <select id="tipo" @bind="NovoTipo" disabled="@(LancamentoEmEdicao is { ValorRealizado: > 0 })"><option value="Despesa">Despesa</option><option value="Receita">Receita</option></select></div>
                         <div class="form-field"><label for="valor">Valor previsto (R$)</label><input id="valor" type="number" min="0.01" step="0.01" required @bind="NovoValor" /></div>
                     </div>
+                    @if (LancamentoEmEdicao is not null)
+                    {
+                        <div class="form-field"><label for="edicao-competencia">Competência</label><input id="edicao-competencia" type="month" required @bind="CompetenciaEdicao" @bind:format="yyyy-MM" disabled="@(LancamentoEmEdicao.ValorRealizado > 0)" /></div>
+                    }
                     <div class="form-field"><label for="categoria">Categoria</label><input id="categoria" list="categorias" maxlength="80" required @bind="NovaCategoria" />
                         <datalist id="categorias"><option value="Moradia" /><option value="Educação" /><option value="Transporte" /><option value="Saúde" /><option value="Alimentação" /><option value="Cartão de crédito" /><option value="Empréstimos" /><option value="Trabalhos e eventos" /><option value="Salário" /><option value="Impostos e MEI" /><option value="Outros" /></datalist>
                     </div>
                     <div class="form-field"><label for="vencimento">Vencimento (opcional)</label><input id="vencimento" type="date" @bind="NovoVencimento" /></div>
                     <div class="form-field"><label for="observacoes">Observações (opcional)</label><textarea id="observacoes" rows="3" maxlength="1000" placeholder="Ex.: parcela 10 de 12" @bind="NovasObservacoes"></textarea></div>
-                    <button class="primary-btn" type="submit" disabled="@Salvando">@(Salvando ? "Salvando..." : "Adicionar lançamento") <span>→</span></button>
+                    <button class="primary-btn" type="submit">@(Salvando ? "Salvando..." : LancamentoEmEdicao is null ? "Adicionar lançamento" : "Salvar alterações") <span>→</span></button>
+                    @if (LancamentoEmEdicao is not null)
+                    {
+                        <button class="mini-btn cancel-edit" type="button" @onclick="CancelarEdicao">Cancelar edição</button>
+                    }
+                    </fieldset>
                 </form>
-                <p class="field-note">O lançamento é inicialmente previsto. Registre o pagamento ou recebimento depois.</p>
+                <p class="field-note">@(LancamentoEmEdicao is null ? "O lançamento é inicialmente previsto. Registre o pagamento ou recebimento depois." : "As alterações preservam as baixas e a origem de importação. Mudar a competência move o lançamento para o mês escolhido.")</p>
             </section>
 
             <section class="panel entries-panel">
-                <div class="panel-heading"><div><div class="section-kicker">ACOMPANHAMENTO</div><h2>Lançamentos do mês</h2></div><span class="count-pill">@Lancamentos.Count registros</span></div>
+                <div class="panel-heading"><div><div class="section-kicker">ACOMPANHAMENTO</div><h2>Lançamentos do mês</h2></div><span class="count-pill" role="status">@Lancamentos.Count registros</span></div>
                 @if (Carregando)
                 {
                     <p class="empty-state">Carregando lançamentos...</p>
@@ -96,22 +111,32 @@
                         <table>
                             <thead><tr><th>Descrição</th><th>Tipo</th><th>Previsto</th><th>Realizado</th><th>Pendente</th><th>Situação</th><th>Ação</th></tr></thead>
                             <tbody>
-                                @foreach (var item in Lancamentos)
+                                @foreach (var item in LancamentosDaPagina)
                                 {
-                                    <tr>
+                                    <tr @key="item.Id">
                                         <td><strong>@item.Descricao</strong><div class="small-muted">@item.Categoria @if (item.DataVencimento.HasValue) { <span> · @item.DataVencimento.Value.ToString("dd/MM")</span> }</div></td>
                                         <td><span class="type-tag @(item.Tipo == TipoLancamento.Receita ? "type-income" : "type-expense")">@(item.Tipo == TipoLancamento.Receita ? "Receita" : "Despesa")</span></td>
                                         <td>@Moeda(item.ValorPrevisto)</td><td>@Moeda(item.ValorRealizado)</td><td>@Moeda(item.SaldoPendente)</td>
                                         <td><span class="status-tag @item.Situacao.ToLowerInvariant()">@item.Situacao</span></td>
                                         <td>
-                                            @if (item.SaldoPendente > 0) { <button class="mini-btn" title="Registrar pagamento ou recebimento" @onclick="() => PrepararBaixa(item)">Registrar</button> }
-                                            @if (item.ValorRealizado > 0) { <button class="mini-btn" @onclick="() => AbrirHistoricoAsync(item)">Histórico</button> }
+                                            @if (item.SaldoPendente > 0) { <button class="mini-btn" disabled="@(Salvando || Carregando)" title="Registrar pagamento ou recebimento" @onclick="() => PrepararBaixa(item)">Registrar</button> }
+                                            @if (item.ValorRealizado > 0) { <button class="mini-btn" disabled="@(Salvando || Carregando)" @onclick="() => AbrirHistoricoAsync(item)">Histórico</button> }
+                                            <button class="mini-btn" disabled="@(Salvando || Carregando)" @onclick="() => PrepararEdicao(item)">Editar</button>
+                                            <button class="mini-btn danger-btn" disabled="@(Salvando || Carregando || item.ValorRealizado > 0)" title="@(item.ValorRealizado > 0 ? "Lançamentos com baixas não podem ser excluídos" : "Revisar exclusão")" @onclick="() => PrepararExclusao(item)">Excluir</button>
                                         </td>
                                     </tr>
                                 }
                             </tbody>
                         </table>
                     </div>
+                    <nav class="entries-pagination" aria-label="Paginação dos lançamentos">
+                        <span class="pagination-range">@((PaginaAtual - 1) * ItensPorPagina + 1)–@Math.Min(PaginaAtual * ItensPorPagina, Lancamentos.Count) de @Lancamentos.Count lançamentos encontrados</span>
+                        <div class="pagination-controls">
+                            <button class="mini-btn" type="button" disabled="@(Salvando || Carregando || PaginaAtual == 1)" @onclick="() => MudarPagina(PaginaAtual - 1)">← Anterior</button>
+                            <span role="status" aria-live="polite">Página @PaginaAtual de @TotalPaginas</span>
+                            <button class="mini-btn" type="button" disabled="@(Salvando || Carregando || PaginaAtual == TotalPaginas)" @onclick="() => MudarPagina(PaginaAtual + 1)">Próxima →</button>
+                        </div>
+                    </nav>
                 }
 
                 @if (LancamentoHistorico is not null)
@@ -134,7 +159,7 @@
                 @if (LancamentoParaBaixa is not null)
                 {
                     <div class="payment-box">
-                        <div class="payment-header"><h3>@(LancamentoParaBaixa.Tipo == TipoLancamento.Despesa ? "Registrar pagamento" : "Registrar recebimento")</h3><button class="icon-close" type="button" @onclick="CancelarBaixa">×</button></div>
+                        <div class="payment-header"><h3>@(LancamentoParaBaixa.Tipo == TipoLancamento.Despesa ? "Registrar pagamento" : "Registrar recebimento")</h3><button class="icon-close" type="button" disabled="@Salvando" @onclick="CancelarBaixa">×</button></div>
                         <p class="small-muted">@LancamentoParaBaixa.Descricao · Saldo pendente: <strong>@Moeda(LancamentoParaBaixa.SaldoPendente)</strong></p>
                         <form @onsubmit="SalvarBaixaAsync" @onsubmit:preventDefault>
                             <div class="form-pair"><div class="form-field"><label for="baixa-valor">Valor (R$)</label><input id="baixa-valor" type="number" min="0.01" step="0.01" max="@LancamentoParaBaixa.SaldoPendente.ToString(CultureInfo.InvariantCulture)" required @bind="ValorBaixa" /></div>
@@ -150,16 +175,26 @@
     </main>
 </div>
 
+<ConfirmacaoExclusao Lancamento="LancamentoParaExcluir" Processando="Salvando" Erro="@MensagemErro"
+                    Cancelar="CancelarExclusao" Confirmar="ExcluirAsync" />
+
 @code {
     private static readonly CultureInfo Brasil = CultureInfo.GetCultureInfo("pt-BR");
     private static string Moeda(decimal valor) => valor.ToString("C2", Brasil);
     private DateTime MesSelecionado = new(DateTime.Today.Year, DateTime.Today.Month, 1);
     private List<LancamentoDto> Lancamentos = [];
+    private const int ItensPorPagina = 6;
+    private int PaginaAtual = 1;
+    private int TotalPaginas => Math.Max(1, (Lancamentos.Count + ItensPorPagina - 1) / ItensPorPagina);
+    private IEnumerable<LancamentoDto> LancamentosDaPagina => Lancamentos.Skip((PaginaAtual - 1) * ItensPorPagina).Take(ItensPorPagina);
     private ResumoMensalDto? Resumo;
     private string? MensagemErro;
     private string? MensagemSucesso;
     private bool Carregando;
     private bool Salvando;
+    private LancamentoDto? LancamentoEmEdicao;
+    private LancamentoDto? LancamentoParaExcluir;
+    private DateTime CompetenciaEdicao;
     private string NovoDescricao = "";
     private string NovaCategoria = "Outros";
     private TipoLancamento NovoTipo = TipoLancamento.Despesa;
@@ -185,15 +220,16 @@
         try
         {
             Lancamentos = (await Servico.ListarAsync(mes)).ToList();
+            PaginaAtual = Math.Clamp(PaginaAtual, 1, TotalPaginas);
             Resumo = await Servico.ResumoAsync(mes);
         }
         catch (Exception ex) { MensagemErro = ex.Message; }
         finally { Carregando = false; }
     }
 
-    private async Task AdicionarAsync()
+    private async Task SalvarLancamentoAsync()
     {
-        if (Salvando) return;
+        if (Salvando || Carregando) return;
         Salvando = true;
         MensagemErro = MensagemSucesso = null;
         try
@@ -201,12 +237,22 @@
             DateOnly? vencimento = NovoVencimento.HasValue
                 ? DateOnly.FromDateTime(NovoVencimento.Value)
                 : null;
-            await Servico.CriarAsync(new CriarLancamentoRequest(NovoDescricao, NovaCategoria, NovoTipo,
-                NovoValor, MesAtual(), vencimento, NovasObservacoes));
-            NovoDescricao = NovasObservacoes = "";
-            NovoVencimento = null;
-            NovoValor = 0;
-            MensagemSucesso = "Lançamento cadastrado!";
+            if (LancamentoEmEdicao is null)
+            {
+                await Servico.CriarAsync(new CriarLancamentoRequest(NovoDescricao, NovaCategoria, NovoTipo,
+                    NovoValor, MesAtual(), vencimento, NovasObservacoes));
+                MensagemSucesso = "Lançamento cadastrado!";
+            }
+            else
+            {
+                var atualizado = await Servico.AtualizarAsync(LancamentoEmEdicao.Id,
+                    new AtualizarLancamentoRequest(NovoDescricao, NovaCategoria, NovoTipo, NovoValor,
+                        DateOnly.FromDateTime(CompetenciaEdicao), vencimento, NovasObservacoes));
+                if (atualizado.Competencia != MesAtual()) PaginaAtual = 1;
+                MesSelecionado = atualizado.Competencia.ToDateTime(TimeOnly.MinValue);
+                MensagemSucesso = "Lançamento atualizado! As baixas foram preservadas.";
+            }
+            CancelarEdicao();
             await CarregarAsync();
         }
         catch (Exception ex) { MensagemErro = ex.Message; }
@@ -215,17 +261,23 @@
 
     private async Task AbrirHistoricoAsync(LancamentoDto item)
     {
+        if (Salvando || Carregando) return;
+        Carregando = true;
+        FecharOperacoes();
         try
         {
             Historico = await Servico.HistoricoAsync(item.Id);
             LancamentoHistorico = item;
         }
         catch (Exception ex) { MensagemErro = ex.Message; }
+        finally { Carregando = false; }
     }
     private void FecharHistorico() => LancamentoHistorico = null;
 
     private void PrepararBaixa(LancamentoDto item)
     {
+        if (Salvando || Carregando) return;
+        FecharOperacoes();
         LancamentoParaBaixa = item;
         ValorBaixa = item.SaldoPendente;
         DataBaixa = DateTime.Today;
@@ -233,6 +285,84 @@
         MensagemErro = null;
     }
     private void CancelarBaixa() => LancamentoParaBaixa = null;
+
+    private void PrepararEdicao(LancamentoDto item)
+    {
+        if (Salvando || Carregando) return;
+        FecharOperacoes();
+        LancamentoEmEdicao = item;
+        NovoDescricao = item.Descricao;
+        NovaCategoria = item.Categoria;
+        NovoTipo = item.Tipo;
+        NovoValor = item.ValorPrevisto;
+        CompetenciaEdicao = item.Competencia.ToDateTime(TimeOnly.MinValue);
+        NovoVencimento = item.DataVencimento?.ToDateTime(TimeOnly.MinValue);
+        NovasObservacoes = item.Observacoes ?? "";
+        MensagemErro = MensagemSucesso = null;
+    }
+
+    private void CancelarEdicao()
+    {
+        LancamentoEmEdicao = null;
+        NovoDescricao = NovasObservacoes = "";
+        NovaCategoria = "Outros";
+        NovoTipo = TipoLancamento.Despesa;
+        NovoValor = 0;
+        NovoVencimento = null;
+    }
+
+    private void FecharOperacoes()
+    {
+        if (LancamentoEmEdicao is not null) CancelarEdicao();
+        LancamentoParaBaixa = LancamentoHistorico = LancamentoParaExcluir = null;
+        Historico = [];
+    }
+
+    private async Task TrocarMesAsync()
+    {
+        FecharOperacoes();
+        PaginaAtual = 1;
+        MensagemSucesso = null;
+        await CarregarAsync();
+    }
+
+    private void MudarPagina(int pagina)
+    {
+        if (Salvando || Carregando) return;
+        PaginaAtual = Math.Clamp(pagina, 1, TotalPaginas);
+        LancamentoParaBaixa = LancamentoHistorico = null;
+        Historico = [];
+    }
+
+    private void CancelarExclusao()
+    {
+        if (!Salvando) LancamentoParaExcluir = null;
+    }
+
+    private void PrepararExclusao(LancamentoDto item)
+    {
+        if (Salvando || Carregando || item.ValorRealizado > 0) return;
+        FecharOperacoes();
+        LancamentoParaExcluir = item;
+        MensagemErro = MensagemSucesso = null;
+    }
+
+    private async Task ExcluirAsync()
+    {
+        if (Salvando || Carregando || LancamentoParaExcluir is null) return;
+        Salvando = true;
+        MensagemErro = MensagemSucesso = null;
+        try
+        {
+            if (await Servico.ExcluirAsync(LancamentoParaExcluir.Id))
+                MensagemSucesso = "Lançamento excluído.";
+            else MensagemSucesso = "O lançamento já não existe. A lista foi atualizada.";
+            FecharOperacoes();
+            await CarregarAsync();
+        }
+        catch (Exception ex) { MensagemErro = ex.Message; }
+        finally { Salvando = false; }
+    }
 
     private async Task SalvarBaixaAsync()
     {

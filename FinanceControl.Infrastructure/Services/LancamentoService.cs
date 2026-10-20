@@ -46,18 +46,8 @@ public sealed class LancamentoService(FinanceDbContext db) : ILancamentoService
 
     public async Task<LancamentoDto> CriarAsync(CriarLancamentoRequest request, CancellationToken ct = default)
     {
-        var descricao = request.Descricao?.Trim() ?? string.Empty;
-        var categoria = request.Categoria?.Trim() ?? string.Empty;
-        if (descricao.Length is < 1 or > 180)
-            throw new ArgumentException("Informe uma descrição com até 180 caracteres.");
-        if (categoria.Length is < 1 or > 80)
-            throw new ArgumentException("Informe uma categoria com até 80 caracteres.");
-        if (!Enum.IsDefined(request.Tipo))
-            throw new ArgumentException("Tipo de lançamento inválido.");
-        if (request.ValorPrevisto <= 0 || decimal.Round(request.ValorPrevisto, 2) != request.ValorPrevisto)
-            throw new ArgumentException("O valor previsto deve ser positivo e ter até duas casas decimais.");
-        if (request.Observacoes?.Length > 1000)
-            throw new ArgumentException("As observações devem ter até 1000 caracteres.");
+        var (descricao, categoria) = ValidarDados(request.Descricao, request.Categoria, request.Tipo,
+            request.ValorPrevisto, request.Observacoes);
         var lancamento = new Lancamento
         {
             Descricao = descricao, Categoria = categoria, Tipo = request.Tipo,
@@ -71,35 +61,93 @@ public sealed class LancamentoService(FinanceDbContext db) : ILancamentoService
         return Mapear(lancamento);
     }
 
+    public async Task<LancamentoDto> AtualizarAsync(int lancamentoId, AtualizarLancamentoRequest request, CancellationToken ct = default)
+    {
+        var (descricao, categoria) = ValidarDados(request.Descricao, request.Categoria, request.Tipo,
+            request.ValorPrevisto, request.Observacoes);
+        // A leitura e a escrita compartilham a transação.
+        using var transaction = await db.Database.BeginTransactionAsync(ct);
+        var lancamento = await db.Lancamentos.AsNoTracking().Include(x => x.Baixas)
+            .SingleOrDefaultAsync(x => x.Id == lancamentoId, ct)
+            ?? throw new KeyNotFoundException("Lançamento não encontrado.");
+        var competencia = NormalizarMes(request.Competencia);
+        if (request.ValorPrevisto < lancamento.Baixas.Sum(x => x.Valor))
+            throw new ArgumentException("O valor previsto não pode ser menor que o total já pago ou recebido.");
+        if (lancamento.Baixas.Count > 0 &&
+            (request.Tipo != lancamento.Tipo || competencia != lancamento.Competencia))
+            throw new ArgumentException("Lançamentos com baixas não podem mudar de tipo ou competência, para preservar o histórico.");
+
+        await db.Lancamentos.Where(x => x.Id == lancamentoId).ExecuteUpdateAsync(setters => setters
+            .SetProperty(x => x.Descricao, descricao)
+            .SetProperty(x => x.Categoria, categoria)
+            .SetProperty(x => x.Tipo, request.Tipo)
+            .SetProperty(x => x.ValorPrevisto, request.ValorPrevisto)
+            .SetProperty(x => x.Competencia, competencia)
+            .SetProperty(x => x.DataVencimento, request.DataVencimento)
+            .SetProperty(x => x.Observacoes, request.Observacoes == null ? null : request.Observacoes.Trim()), ct);
+        await transaction.CommitAsync(ct);
+        lancamento.Descricao = descricao;
+        lancamento.Categoria = categoria;
+        lancamento.Tipo = request.Tipo;
+        lancamento.ValorPrevisto = request.ValorPrevisto;
+        lancamento.Competencia = competencia;
+        lancamento.DataVencimento = request.DataVencimento;
+        lancamento.Observacoes = request.Observacoes?.Trim();
+        return Mapear(lancamento);
+    }
+
     public async Task<LancamentoDto> RegistrarBaixaAsync(int lancamentoId, RegistrarBaixaRequest request, CancellationToken ct = default)
     {
         if (request.Valor <= 0 || decimal.Round(request.Valor, 2) != request.Valor)
             throw new ArgumentException("Informe um valor positivo com até duas casas decimais.");
         if (request.Observacao?.Length > 500)
             throw new ArgumentException("A observação deve ter até 500 caracteres.");
-        var lancamento = await db.Lancamentos.Include(x => x.Baixas)
+        using var transaction = await db.Database.BeginTransactionAsync(ct);
+        var lancamento = await db.Lancamentos.AsNoTracking().Include(x => x.Baixas)
             .SingleOrDefaultAsync(x => x.Id == lancamentoId, ct)
             ?? throw new KeyNotFoundException("Lançamento não encontrado.");
         var pendente = lancamento.ValorPrevisto - lancamento.Baixas.Sum(x => x.Valor);
         if (request.Valor > pendente)
             throw new ArgumentException($"O valor excede o saldo pendente de {pendente:C}.");
-        lancamento.Baixas.Add(new Baixa { Valor = request.Valor, Data = request.Data,
-            Observacao = request.Observacao?.Trim() });
+        var baixa = new Baixa { LancamentoId = lancamentoId, Valor = request.Valor, Data = request.Data,
+            Observacao = request.Observacao?.Trim() };
+        db.Baixas.Add(baixa);
         await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
+        lancamento.Baixas.Add(baixa);
         return Mapear(lancamento);
     }
 
     public async Task<bool> ExcluirAsync(int lancamentoId, CancellationToken ct = default)
     {
-        var lancamento = await db.Lancamentos.FindAsync([lancamentoId], ct);
-        if (lancamento is null) return false;
-        db.Lancamentos.Remove(lancamento);
-        await db.SaveChangesAsync(ct);
+        using var transaction = await db.Database.BeginTransactionAsync(ct);
+        if (!await db.Lancamentos.AnyAsync(x => x.Id == lancamentoId, ct)) return false;
+        if (await db.Baixas.AnyAsync(x => x.LancamentoId == lancamentoId, ct))
+            throw new ArgumentException("Não é possível excluir um lançamento com pagamentos ou recebimentos registrados.");
+        await db.Lancamentos.Where(x => x.Id == lancamentoId).ExecuteDeleteAsync(ct);
+        await transaction.CommitAsync(ct);
         return true;
     }
 
+    private static (string Descricao, string Categoria) ValidarDados(string? descricao, string? categoria,
+        TipoLancamento tipo, decimal valorPrevisto, string? observacoes)
+    {
+        descricao = descricao?.Trim() ?? string.Empty;
+        categoria = categoria?.Trim() ?? string.Empty;
+        if (descricao.Length is < 1 or > 180)
+            throw new ArgumentException("Informe uma descrição com até 180 caracteres.");
+        if (categoria.Length is < 1 or > 80)
+            throw new ArgumentException("Informe uma categoria com até 80 caracteres.");
+        if (!Enum.IsDefined(tipo)) throw new ArgumentException("Tipo de lançamento inválido.");
+        if (valorPrevisto <= 0 || decimal.Round(valorPrevisto, 2) != valorPrevisto)
+            throw new ArgumentException("O valor previsto deve ser positivo e ter até duas casas decimais.");
+        if (observacoes?.Length > 1000)
+            throw new ArgumentException("As observações devem ter até 1000 caracteres.");
+        return (descricao, categoria);
+    }
+
     private static DateOnly NormalizarMes(DateOnly data) => new(data.Year, data.Month, 1);
-    private static LancamentoDto Mapear(Lancamento x)
+    internal static LancamentoDto Mapear(Lancamento x)
     {
         var total = x.Baixas.Sum(b => b.Valor);
         var pendente = Math.Max(0, x.ValorPrevisto - total);
