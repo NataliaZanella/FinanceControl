@@ -42,6 +42,7 @@ using (var scope = app.Services.CreateScope())
         ON "RegistrosImportados" ("LancamentoId");
         """);
     await AtualizacaoValoresReceber.AplicarAsync(db);
+    await AtualizacaoCategorias.AplicarAsync(db);
 }
 
 app.UseStaticFiles();
@@ -89,6 +90,7 @@ api.MapDelete("/{id:int}", async (int id, ILancamentoService servico, Cancellati
 });
 
 app.MapValoresReceber();
+app.MapCategorias();
 
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode()

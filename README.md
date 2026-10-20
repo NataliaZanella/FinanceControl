@@ -6,6 +6,7 @@
 
 - Cadastro de receitas e despesas por **mês de competência**.
 - Categorias, valores previstos, vencimentos e observações.
+- Cadastro de categorias com busca, renomeação dos usos e exclusão bloqueada quando há lançamentos vinculados. Abra `/categorias`; veja `docs/categorias.md` sobre a atualização aditiva com backup.
 - Registro de **vários pagamentos** (despesas) ou recebimentos (receitas) no mesmo lançamento.
 - Situações: `Pendente`, `Parcial` e `Quitado`.
 - Histórico das baixas, com data, valor e observações.
@@ -128,7 +129,7 @@ Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:5178/api/lancamentos' `
 ## 8. Próximos incrementos sugeridos
 
 1. Evoluir a importação com correção de valores, categorias e importação específica da aba de dívidas.
-2. Cadastro de contas e categorias + filtros; edição e exclusão com confirmação já disponíveis.
+2. Cadastro de contas; categorias, filtros, edição e exclusão com confirmação já disponíveis.
 3. Dívidas, cartões, parcelas e lançamentos recorrentes.
 4. Banco, saldo inicial, fluxo de caixa real e relatórios por período.
 5. Login e controle de acesso antes de permitir conexão por outros dispositivos.

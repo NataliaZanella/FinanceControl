@@ -1,0 +1,108 @@
+@page "/categorias"
+@namespace FinanceControl.SharedUI.Components.Pages
+@using System.Globalization
+@using FinanceControl.SharedUI.Components
+@inject ICategoriaService Servico
+
+<PageTitle>FinanceControl | Categorias</PageTitle>
+
+<div class="app-shell">
+    <aside class="sidebar">
+        <div class="brand"><span class="brand-mark">F</span> Finance<span>Control</span></div>
+        <div class="side-label">ÁREA FINANCEIRA</div>
+        <a class="nav-link" href="/">◈ &nbsp; Visão geral</a>
+        <a class="nav-link" href="/valores-a-receber">↙ &nbsp; Valores a receber</a>
+        <a class="nav-selected nav-selected-link" href="/categorias">▦ &nbsp; Categorias</a>
+        <a class="nav-link" href="/importar">▤ &nbsp; Importar Excel</a>
+        <div class="sidebar-note">Organize os nomes sem alterar valores ou recebimentos.</div>
+        <div class="sidebar-foot">C# · Blazor · SQLite<br />Versão local de desenvolvimento</div>
+    </aside>
+    <main class="main-content">
+        <header class="topbar"><div><div class="eyebrow">ORGANIZAÇÃO</div><h1>Categorias <span>✦</span></h1><p>Cadastre e mantenha os nomes usados nos lançamentos.</p></div><a class="mini-btn nav-back" href="/">← Voltar ao painel</a></header>
+        @if (Erro is not null) { <div class="alert alert-error" role="alert">@Erro</div> }
+        @if (Sucesso is not null) { <div class="alert alert-success" role="status">@Sucesso</div> }
+        <div class="content-grid">
+            <section class="panel">
+                <div class="panel-heading"><h2>@(EmEdicao is null ? "Nova categoria" : "Renomear categoria")</h2></div>
+                @if (EmEdicao is { QuantidadeLancamentos: > 0 })
+                {
+                    <p class="import-info">Este nome será atualizado em <strong>@EmEdicao.QuantidadeLancamentos lançamentos</strong> de todos os meses. Valores, datas e baixas serão preservados.</p>
+                }
+                <form @onsubmit="SalvarAsync" @onsubmit:preventDefault><fieldset class="entry-fields" disabled="@Ocupado">
+                    <div class="form-field"><label for="nome-categoria">Nome</label><input id="nome-categoria" required maxlength="80" @bind="Nome" placeholder="Ex.: Animais de estimação" /></div>
+                    <button class="primary-btn" type="submit">@(Ocupado ? "Salvando..." : EmEdicao is null ? "Cadastrar categoria" : "Salvar nome e atualizar usos")</button>
+                    @if (EmEdicao is not null) { <button class="mini-btn cancel-edit" type="button" @onclick="CancelarEdicao">Cancelar edição</button> }
+                </fieldset></form>
+                <p class="field-note">Nomes iguais com diferenças de acentos, espaços ou maiúsculas são tratados como a mesma categoria.</p>
+            </section>
+            <section class="panel">
+                <div class="panel-heading"><h2>Categorias disponíveis</h2><span class="count-pill" role="status">@Filtradas.Count de @Todas.Count</span></div>
+                <div class="form-field"><label for="buscar-categoria">Buscar categoria</label><input id="buscar-categoria" type="search" @bind="Busca" @bind:event="oninput" @bind:after="() => Pagina = 1" disabled="@Ocupado" /></div>
+                @if (Filtradas.Count == 0) { <p class="empty-state">Nenhuma categoria encontrada.</p> }
+                else
+                {
+                    <div class="table-wrap"><table class="categories-table"><thead><tr><th>Categoria</th><th>Uso em lançamentos</th><th>Ações</th></tr></thead><tbody>
+                        @foreach (var categoria in Filtradas.Skip((Pagina - 1) * 6).Take(6))
+                        {
+                            <tr><td><strong>@categoria.Nome</strong>@if (!categoria.Cadastrada) { <div class="small-muted">Nome encontrado no histórico, ainda sem cadastro</div> }</td><td>@categoria.QuantidadeLancamentos</td><td>
+                                @if (categoria.Cadastrada)
+                                {
+                                    <button class="mini-btn" disabled="@Ocupado" @onclick="() => PrepararEdicao(categoria)">Editar</button>
+                                    <button class="mini-btn danger-btn" disabled="@(Ocupado || categoria.QuantidadeLancamentos > 0)" title="@(categoria.QuantidadeLancamentos > 0 ? "Categoria em uso: reclassifique os lançamentos antes de excluir" : "Revisar exclusão")" @onclick="() => PrepararExclusao(categoria)">Excluir</button>
+                                }
+                                else { <button class="mini-btn" disabled="@Ocupado" @onclick="() => PrepararCadastro(categoria)">Cadastrar este nome</button> }
+                            </td></tr>
+                        }
+                    </tbody></table></div>
+                    <nav class="entries-pagination" aria-label="Paginação de categorias"><button class="mini-btn" disabled="@(Ocupado || Pagina == 1)" @onclick="() => Pagina--">← Anterior</button><span role="status">Página @Pagina de @TotalPaginas</span><button class="mini-btn" disabled="@(Ocupado || Pagina == TotalPaginas)" @onclick="() => Pagina++">Próxima →</button></nav>
+                }
+                <p class="field-note">Categorias em uso não podem ser excluídas. Nomes vindos da API ou de importações antigas continuam visíveis, mesmo sem cadastro.</p>
+            </section>
+        </div>
+    </main>
+</div>
+
+<ConfirmacaoExclusao Descricao="@DescricaoExclusao" Aviso="A categoria será removida do cadastro. Nenhum lançamento será excluído. Categorias em uso não podem ser removidas."
+                    Erro="@Erro" Processando="Ocupado" Cancelar="CancelarExclusao" Confirmar="ExcluirAsync" />
+
+@code {
+    private IReadOnlyList<CategoriaDto> Todas = [];
+    private CategoriaDto? EmEdicao, ParaExcluir;
+    private string Nome = "", Busca = "";
+    private string? Erro, Sucesso;
+    private bool Ocupado;
+    private int Pagina = 1;
+    private IReadOnlyList<CategoriaDto> Filtradas => Todas.Where(x => CultureInfo.GetCultureInfo("pt-BR").CompareInfo
+        .IndexOf(x.Nome, Busca.Trim(), CompareOptions.IgnoreCase | CompareOptions.IgnoreNonSpace) >= 0).ToList();
+    private int TotalPaginas => Math.Max(1, (Filtradas.Count + 5) / 6);
+    private string? DescricaoExclusao => ParaExcluir is null ? null : $"Excluir a categoria {ParaExcluir.Nome}?";
+
+    protected override async Task OnInitializedAsync() => await ExecutarAsync(CarregarAsync);
+    private async Task CarregarAsync() { Todas = await Servico.ListarAsync(); Pagina = Math.Clamp(Pagina, 1, TotalPaginas); }
+    private async Task ExecutarAsync(Func<Task> acao)
+    {
+        if (Ocupado) return;
+        Ocupado = true; Erro = Sucesso = null;
+        try { await acao(); } catch (Exception ex) { Erro = ex.Message; } finally { Ocupado = false; }
+    }
+    private void CancelarEdicao() { EmEdicao = null; Nome = ""; }
+    private void PrepararEdicao(CategoriaDto categoria) { if (Ocupado) return; ParaExcluir = null; EmEdicao = categoria; Nome = categoria.Nome; Erro = Sucesso = null; }
+    private void PrepararCadastro(CategoriaDto categoria) { if (Ocupado) return; CancelarEdicao(); Nome = categoria.Nome; Erro = Sucesso = null; }
+    private void PrepararExclusao(CategoriaDto categoria) { if (Ocupado || categoria.QuantidadeLancamentos > 0) return; ParaExcluir = categoria; Erro = Sucesso = null; }
+    private void CancelarExclusao() { if (!Ocupado) ParaExcluir = null; }
+    private Task SalvarAsync() => ExecutarAsync(async () =>
+    {
+        var salva = EmEdicao is null ? await Servico.CriarAsync(new(Nome)) : await Servico.RenomearAsync(EmEdicao.Id, new(Nome));
+        CancelarEdicao(); Busca = ""; await CarregarAsync();
+        Pagina = Todas.ToList().FindIndex(x => x.Id == salva.Id) / 6 + 1;
+        Sucesso = "Categoria salva. Valores e baixas foram preservados.";
+    });
+    private Task ExcluirAsync() => ExecutarAsync(async () =>
+    {
+        if (ParaExcluir is null) return;
+        var id = ParaExcluir.Id;
+        var excluiu = await Servico.ExcluirAsync(id);
+        ParaExcluir = null; if (EmEdicao?.Id == id) CancelarEdicao();
+        await CarregarAsync(); Sucesso = excluiu ? "Categoria excluída." : "A categoria já não existe. A lista foi atualizada.";
+    });
+}

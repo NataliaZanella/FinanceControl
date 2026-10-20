@@ -18,17 +18,7 @@ public static class AtualizacaoValoresReceber
             consulta.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN ('GruposReceber', 'ItensGrupoReceber')";
             if (Convert.ToInt32(await consulta.ExecuteScalarAsync(ct)) == 2) return;
 
-            // BackupDatabase inclui o WAL e produz uma cópia consistente, inclusive com outra conexão aberta.
-            var origem = conexao.DataSource;
-            if (!string.IsNullOrWhiteSpace(origem) && origem != ":memory:")
-            {
-                var destino = Path.GetFullPath(origem) + $".antes-valores-receber-{DateTime.UtcNow:yyyyMMddHHmmss}-{Guid.NewGuid():N}.db";
-                using var backup = new SqliteConnection(new SqliteConnectionStringBuilder {
-                    DataSource = destino, Mode = SqliteOpenMode.ReadWriteCreate, Pooling = false
-                }.ToString());
-                backup.Open();
-                conexao.BackupDatabase(backup);
-            }
+            BackupBancoSqlite.Criar(conexao, "valores-receber");
 
             using var transacao = await db.Database.BeginTransactionAsync(ct);
             await db.Database.ExecuteSqlRawAsync("""

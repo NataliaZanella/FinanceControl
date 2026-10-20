@@ -16,6 +16,7 @@ public static class DependencyInjection
         services.AddScoped<ILancamentoService, LancamentoService>();
         services.AddScoped<IImportacaoExcelService, ImportacaoExcelService>();
         services.AddScoped<IValoresReceberService, ValoresReceberService>();
+        services.AddScoped<ICategoriaService, CategoriaService>();
         return services;
     }
 }

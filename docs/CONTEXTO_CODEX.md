@@ -19,6 +19,7 @@ Atualização do contexto: 20/10/2026. Documento produzido a partir das decisõe
 - Windows Desktop/MAUI ainda **não** implementado. A API e SharedUI são a base para futura evolução.
 
 ## 3. Testes relatados pela desenvolvedora
+- Cadastro de categorias em `/categorias`: criar, renomear usos em todos os meses e excluir somente nomes sem uso, com confirmação modal e paginação. Duplicidade ignora acentos/maiúsculas/espaços; nomes legados não cadastrados seguem visíveis. O dashboard usa seleção carregada pelo `ICategoriaService`, reutilizável no Windows. Nova tabela aditiva com backup consistente antes da atualização de banco anterior; o campo textual dos lançamentos foi mantido. 92 testes aprovados e HTTP conferido apenas com dados sintéticos; interação visual pendente. Detalhes em `docs/categorias.md`.
 - Filtros do dashboard implementados em `developer`: busca por descrição/observação sem diferenciar acentos ou maiúsculas, tipo, situação e categoria. A tabela pagina os resultados em seis itens; os indicadores permanecem mensais. Sem mudanças de banco/API e sem dados pessoais. Consulta reutilizável em `Application/Models/FiltroLancamentos.cs`; roteiro em `docs/filtros-lancamentos.md`. Testes sintéticos e conferência HTTP aprovados; interação visual ainda pendente.
 - Desmembramento revisado disponível em Valores a receber: somente receitas sem baixas e fora de grupos; de 2 a 100 itens, soma igual ao original e mesma competência. Primeiro item reutiliza o ID e preserva origem de importação, observações anteriores e nota do original; demais partes são criadas na mesma transação. Excluir esse primeiro item transfere a origem a outro item restante, evitando liberar reimportação parcial. Dados pessoais não foram convertidos. Validação: 71 testes sintéticos aprovados, build sem erros/avisos e API local conferida; os cliques do novo formulário ainda dependem de conferência manual. Não há mudança de esquema nesta etapa.
 - Edição/exclusão adicionadas à própria tela de valores a receber: pessoa/título do grupo e campos individuais dos itens. A confirmação de exclusão centralizada é compartilhada com o dashboard. Excluir grupo remove também seus lançamentos, de forma atômica, e bloqueia o lote inteiro se existir qualquer recebimento. Os endpoints validam pertencimento do item e reutilizam as regras financeiras de lançamentos. Sem nova mudança de esquema e sem operações em dados pessoais; detalhes e roteiro em `docs/valores-a-receber.md`.
@@ -65,8 +66,8 @@ Arquivo original fornecido: `PLANILHA DE CONTASs.xlsx` (arquivo **privado**, nã
 
 ## 7. Próximos requisitos de produto (ainda não realizados)
 - Conferência da importação com base na aba `OUTUBRO 2026` e teste de reimportação sem duplicatas.
-- Auditoria e estorno ainda pendentes; edição e exclusão com confirmação implementadas conforme regras acima. Filtros e cadastro de categorias/contas continuam pendentes.
-- Categorias e contas, dívida consolidada, parcelamentos, cartões de crédito/faturas e recorrências.
+- Auditoria e estorno ainda pendentes; edição, exclusão com confirmação, filtros e cadastro de categorias implementados conforme regras acima.
+- Cadastro de contas, evolução de dívidas com juros/estornos, parcelamentos, cartões de crédito/faturas e recorrências.
 - Metas/orçamentos e relatórios/gráficos, incluindo fluxo de caixa por data real de pagamento.
 - Autenticação antes de exposição fora de localhost; backups/restauração e integridade de dados.
 - Cliente `FinanceControl.Desktop` com .NET MAUI Blazor Hybrid consumindo API e compartilhando componentes; offline/sincronização só após definição explícita das regras.

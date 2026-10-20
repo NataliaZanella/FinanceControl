@@ -3,6 +3,7 @@
 @using System.Globalization
 @using FinanceControl.SharedUI.Components
 @inject ILancamentoService Servico
+@inject ICategoriaService Categorias
 
 <PageTitle>FinanceControl | Visão geral</PageTitle>
 
@@ -13,6 +14,7 @@
         <a class="nav-selected nav-selected-link" href="/">◈ &nbsp; Visão geral</a>
         <a class="nav-link" href="/importar">▤ &nbsp; Importar Excel</a>
         <a class="nav-link" href="/valores-a-receber">↙ &nbsp; Valores a receber</a>
+        <a class="nav-link" href="/categorias">▦ &nbsp; Categorias</a>
         <div class="sidebar-note">Seu controle financeiro em um só lugar.</div>
         <div class="sidebar-foot">C# · Blazor · SQLite<br />Versão local de desenvolvimento</div>
     </aside>
@@ -24,6 +26,7 @@
                 <h1>Seu dinheiro, com clareza. <span>✦</span></h1>
                 <p>Controle receitas, despesas e pagamentos sem depender de várias abas.</p>
                 <a class="mini-btn nav-back mobile-nav-link" href="/valores-a-receber">Valores a receber →</a>
+                <a class="mini-btn nav-back mobile-nav-link" href="/categorias">Categorias →</a>
             </div>
             <div class="month-filter">
                 <label for="mes">Mês de referência</label>
@@ -82,8 +85,8 @@
                     {
                         <div class="form-field"><label for="edicao-competencia">Competência</label><input id="edicao-competencia" type="month" required @bind="CompetenciaEdicao" @bind:format="yyyy-MM" disabled="@(LancamentoEmEdicao.ValorRealizado > 0)" /></div>
                     }
-                    <div class="form-field"><label for="categoria">Categoria</label><input id="categoria" list="categorias" maxlength="80" required @bind="NovaCategoria" />
-                        <datalist id="categorias"><option value="Moradia" /><option value="Educação" /><option value="Transporte" /><option value="Saúde" /><option value="Alimentação" /><option value="Cartão de crédito" /><option value="Empréstimos" /><option value="Trabalhos e eventos" /><option value="Salário" /><option value="Impostos e MEI" /><option value="Outros" /></datalist>
+                    <div class="form-field"><label for="categoria">Categoria</label><select id="categoria" required @bind="NovaCategoria"><option value="">Selecione uma categoria</option>@foreach (var nome in CategoriasDisponiveis) { <option value="@nome">@nome</option> }</select>
+                        <a class="field-note" href="/categorias">Gerenciar categorias</a>
                     </div>
                     <div class="form-field"><label for="vencimento">Vencimento (opcional)</label><input id="vencimento" type="date" @bind="NovoVencimento" /></div>
                     <div class="form-field"><label for="observacoes">Observações (opcional)</label><textarea id="observacoes" rows="3" maxlength="1000" placeholder="Ex.: parcela 10 de 12" @bind="NovasObservacoes"></textarea></div>
@@ -199,6 +202,10 @@
     private static string Moeda(decimal valor) => valor.ToString("C2", Brasil);
     private DateTime MesSelecionado = new(DateTime.Today.Year, DateTime.Today.Month, 1);
     private List<LancamentoDto> Lancamentos = [];
+    private IReadOnlyList<CategoriaDto> CadastroCategorias = [];
+    private IEnumerable<string> CategoriasDisponiveis => CadastroCategorias.Select(x => x.Nome)
+        .Concat(LancamentoEmEdicao is null ? Array.Empty<string>() : new[] { LancamentoEmEdicao.Categoria })
+        .Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(x => x, StringComparer.Create(Brasil, true));
     private FiltroLancamentos Filtros = new();
     private IReadOnlyList<LancamentoDto> LancamentosFiltrados = [];
     private IEnumerable<string> CategoriasDoMes => Lancamentos.Select(x => x.Categoria.Trim())
@@ -241,6 +248,9 @@
         try
         {
             Lancamentos = (await Servico.ListarAsync(mes)).ToList();
+            CadastroCategorias = await Categorias.ListarAsync();
+            if (LancamentoEmEdicao is null && !CategoriasDisponiveis.Contains(NovaCategoria))
+                NovaCategoria = CategoriasDisponiveis.FirstOrDefault() ?? "";
             AtualizarFiltrados();
             Resumo = await Servico.ResumoAsync(mes);
         }
@@ -326,7 +336,7 @@
     {
         LancamentoEmEdicao = null;
         NovoDescricao = NovasObservacoes = "";
-        NovaCategoria = "Outros";
+        NovaCategoria = CategoriasDisponiveis.Contains("Outros") ? "Outros" : CategoriasDisponiveis.FirstOrDefault() ?? "";
         NovoTipo = TipoLancamento.Despesa;
         NovoValor = 0;
         NovoVencimento = null;

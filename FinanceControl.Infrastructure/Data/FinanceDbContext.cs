@@ -10,9 +10,20 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options)
     public DbSet<RegistroImportacao> RegistrosImportados => Set<RegistroImportacao>();
     public DbSet<GrupoReceber> GruposReceber => Set<GrupoReceber>();
     public DbSet<ItemGrupoReceber> ItensGrupoReceber => Set<ItemGrupoReceber>();
+    public DbSet<Categoria> Categorias => Set<Categoria>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<Categoria>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Nome).IsRequired().HasMaxLength(80);
+            entity.Property(x => x.NomeNormalizado).IsRequired().HasMaxLength(80);
+            entity.HasIndex(x => x.NomeNormalizado).IsUnique();
+            entity.HasData(Categoria.Padroes.Select((nome, i) => new Categoria {
+                Id = i + 1, Nome = nome, NomeNormalizado = Categoria.NormalizarNome(nome)
+            }));
+        });
         modelBuilder.Entity<GrupoReceber>(entity =>
         {
             entity.HasKey(x => x.Id);
