@@ -51,7 +51,9 @@ public sealed class ImportacaoExcelService(FinanceDbContext db) : IImportacaoExc
         }
         if (!achouContas || !achouTrabalhos)
             throw new ArgumentException("Não encontrei as colunas CONTAS e TRABALHOS nesta aba. Ela exige mapeamento manual.");
-        int ultima = Math.Min(ws.LastRowUsed()?.RowNumber() ?? 0, 5000);
+        int ultima = ws.LastRowUsed()?.RowNumber() ?? 0;
+        if (ultima > 5000)
+            throw new ArgumentException("A aba ultrapassa o limite de 5.000 linhas. Divida a aba antes de importar; nenhuma linha foi importada.");
         var contas = new LayoutColunas(contasCol, contasCol + 1, contasCol + 2);
         var trabalhos = DescobrirLayoutTrabalhos(ws, trabalhoCol, cabecalho + 1, ultima);
         for (int r = cabecalho + 1; r <= ultima; r++)
@@ -225,12 +227,17 @@ public sealed class ImportacaoExcelService(FinanceDbContext db) : IImportacaoExc
 
     private static bool LerValor(IXLCell cell, out decimal valor)
     {
-        // Texto como "650,00" precisa ser interpretado em pt-BR, e não como 65.000.
+        // Células numéricas não dependem de cultura. Texto exige formato inequívoco.
         if (cell.DataType == XLDataType.Number && cell.TryGetValue<decimal>(out valor)) return true;
         var texto = cell.GetString().Trim().Replace("R$", "", StringComparison.OrdinalIgnoreCase).Trim();
-        if (string.IsNullOrEmpty(texto)) { valor = 0; return false; }
-        return decimal.TryParse(texto, NumberStyles.Number, PtBr, out valor) ||
-               decimal.TryParse(texto, NumberStyles.Number, CultureInfo.InvariantCulture, out valor);
+        valor = 0;
+        if (Regex.IsMatch(texto, @"^[+-]?\d+$"))
+            return decimal.TryParse(texto, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out valor);
+        if (Regex.IsMatch(texto, @"^[+-]?(?:\d+|\d{1,3}(?:\.\d{3})+),\d{1,2}$"))
+            return decimal.TryParse(texto, NumberStyles.Number, PtBr, out valor);
+        if (Regex.IsMatch(texto, @"^[+-]?(?:\d+|\d{1,3}(?:,\d{3})+)\.\d{1,2}$"))
+            return decimal.TryParse(texto, NumberStyles.Number, CultureInfo.InvariantCulture, out valor);
+        return false;
     }
 
     private static bool LerData(IXLCell cell, out DateTime data)

@@ -34,4 +34,4 @@ Origem analisada: `PLANILHA DE CONTASs.xlsx` (arquivo fornecido pela usuária, *
 5. Importar primeiro para uma área de pré-visualização, só depois confirmar o salvamento definitivo.
 6. Preservar aba+linha de origem para rastreabilidade, e gerar relatório de importação com erros sem revelar informação sensível.
 
-**Estado atual:** apenas mapeamento e modelo de dados inicial. Não existe importador implementado no MVP.
+**Estado atual:** importador mensal implementado em `/importar`, com prévia, ajuste de datas, confirmação transacional e prevenção de duplicidades. O mapeamento manual de colunas e a importação da aba de dívidas continuam pendentes. Consulte `importacao-excel.md` para o comportamento atual.

@@ -33,6 +33,9 @@ Como a primeira versão criava o banco via `EnsureCreated()` e não usa migratio
 
 ## Limitações
 
+- Valores textuais aceitam inteiros e decimais explícitos como `650,00`, `650.00`, `1.234,56` e `1,234.56`. Separadores ambíguos como `1.234` ou `1,234` são bloqueados para revisão; use uma célula numérica ou um decimal explícito. Células numéricas mantêm a regra de até duas casas decimais.
+- Abas com conteúdo além da linha 5.000 são recusadas integralmente; divida a aba antes de importar. O sistema não importa apenas uma parte silenciosamente.
+
 - Versão local sem autenticação: não publique a porta para internet; os endpoints existentes não têm autorização.
 - Suporta `.xlsx` até 12 MB, uma aba por vez, até 2.000 registros por confirmação (até 5.000 linhas analisadas por aba).
 - Não identifica pagamentos efetivos automaticamente. Uma informação em observações sobre valores já pagos deve ser lançada em Baixas manualmente após conferir.
