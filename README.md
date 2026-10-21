@@ -15,7 +15,7 @@
 - Filtros da tabela mensal por descrição/observação, tipo, situação e categoria, com seis resultados por página. Indicadores continuam considerando o mês inteiro. Veja `docs/filtros-lancamentos.md`.
 - API HTTP local para futuramente conectar a aplicação Windows.
 - Banco SQLite criado automaticamente na primeira execução.
-- **Importação XLSX:** seleção da aba, prévia com checkboxes, ajustes de datas, detecção de duplicidade e confirmação com transação. Abra `/importar`.
+- **Importação XLSX:** seleção de uma ou várias abas, prévia por aba com checkboxes e paginação, ajustes de datas, detecção de duplicidade e confirmação conjunta com transação. Abra `/importar`.
 - **Valores a receber:** grupos por pessoa, itens individuais, totais, recebimentos parciais e edição/exclusão de grupos e itens, reutilizando os lançamentos do painel. Abra `/valores-a-receber`; veja `docs/valores-a-receber.md` antes de converter um registro antigo.
 - **Desmembramento revisado:** transforma uma receita consolidada sem recebimentos em itens separados, mantendo total mensal e origem de importação. A soma deve bater exatamente e a confirmação é manual.
 

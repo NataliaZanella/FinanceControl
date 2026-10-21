@@ -8,9 +8,9 @@
 4. `dotnet build .\FinanceControl.slnx`
 5. `dotnet run --project .\FinanceControl.Web --launch-profile http`
 6. Abra `http://127.0.0.1:5178/importar` e envie `PLANILHA DE CONTASs.xlsx`.
-7. Selecione apenas uma aba mensal. Recomendado: `OUTUBRO 2026` para primeiro teste.
-8. Confira a prévia: confira descrições, valores, competência, data e observações. Não importe em lote registros suspeitos.
-9. Desmarque itens errados e confirme a importação. No painel principal, selecione o mesmo mês para visualizar os resultados.
+7. Selecione uma ou várias abas mensais. Para abas sem ano, informe o ano individualmente. Clique em **Gerar prévia das abas selecionadas**.
+8. Use **Revisar aba** para conferir cada prévia: descrições, valores, competência, data e observações. A tabela mostra seis linhas por página; seleções e datas ficam preservadas ao alternar entre abas.
+9. Desmarque itens errados e confirme os selecionados de todas as abas em uma única operação. No painel principal, selecione o mesmo mês para visualizar os resultados.
 10. Importe a MESMA aba novamente para testar a prevenção de duplicatas — a prévia deverá sinalizar os itens já existentes.
 
 ## Como funciona
@@ -24,7 +24,7 @@
 - Observações como `PAGUEI`, `RECEBIDO`, `ATRASADO` não criam baixas automaticamente: os registros são sempre criados como previstos, para evitar informações financeiras incorretas.
 - A aba `VALOR TOTAL DE DÍVIDAS` é propositalmente bloqueada. Ela tem um layout diferente e precisa de tratamento específico.
 - A proteção contra duplicação combina (a) chave única SHA-256 de nome do arquivo + aba + linha + tipo na tabela `RegistrosImportados` e (b) checagem de similaridade para registros já cadastrados, inclusive manualmente (tipo, descrição, valor, competência e vencimento). Itens semelhantes são bloqueados por segurança, mesmo que possam ser registros legítimos distintos. Futuramente adicionaremos ação de revisão dessas coincidências.
-- Cada confirmação roda numa única transação de banco; a mesma linha não é salva parcialmente em caso de erro de armazenamento.
+- Cada confirmação roda numa única transação de banco; todos os itens selecionados de todas as abas são revertidos em caso de erro de armazenamento.
 - A planilha original não é alterada; os dados não são incluídos no projeto ZIP.
 
 ## Banco SQLite existente
@@ -37,7 +37,15 @@ Como a primeira versão criava o banco via `EnsureCreated()` e não usa migratio
 - Abas com conteúdo além da linha 5.000 são recusadas integralmente; divida a aba antes de importar. O sistema não importa apenas uma parte silenciosamente.
 
 - Versão local sem autenticação: não publique a porta para internet; os endpoints existentes não têm autorização.
-- Suporta `.xlsx` até 12 MB, uma aba por vez, até 2.000 registros por confirmação (até 5.000 linhas analisadas por aba).
+- Suporta `.xlsx` até 12 MB, até 100 abas por prévia, 20.000 linhas candidatas no conjunto e 2.000 registros selecionados por confirmação (até 5.000 linhas analisadas por aba).
 - Não identifica pagamentos efetivos automaticamente. Uma informação em observações sobre valores já pagos deve ser lançada em Baixas manualmente após conferir.
 - Importações com nome de arquivo alterado podem ser detectadas por igualdade dos dados, mas a chave de origem depende do nome do arquivo. Alterar linhas existentes pode exigir edição dos lançamentos já cadastrados, não reimportação.
 - Itens com o mesmo tipo, competência, descrição, valor e vencimento de um lançamento existente são tratados como duplicados (pode existir coincidência legítima).
+
+## Seleção de várias abas
+
+- Alterar a seleção de abas ou um ano manual invalida a prévia anterior; gere uma nova antes de confirmar.
+- Se uma aba selecionada for inválida, a prévia inteira é recusada com indicação da aba; corrija ou desmarque essa aba.
+- Linhas equivalentes de abas diferentes da mesma competência são bloqueadas no lote, inclusive na confirmação após correções de data. Linhas iguais em posições distintas da mesma aba são preservadas quando ainda não existem no banco.
+- Após salvar, a prévia é recarregada e todas as seleções são limpas. Os itens importados passam a ser sinalizados como duplicados.
+- Esta evolução não altera o esquema do banco.

@@ -3,6 +3,7 @@ using FinanceControl.Domain.Enums;
 namespace FinanceControl.Application.Models;
 
 public sealed record AbaImportacaoDto(string Nome, bool TemAno, int? Ano, int? Mes, bool Suportada);
+public sealed record SelecaoAbaImportacaoRequest(string Aba, int? AnoManual);
 
 public sealed class LinhaImportacaoDto
 {

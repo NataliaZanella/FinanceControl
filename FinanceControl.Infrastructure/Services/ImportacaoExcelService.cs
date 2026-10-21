@@ -26,9 +26,54 @@ public sealed class ImportacaoExcelService(FinanceDbContext db) : IImportacaoExc
     }
 
     public async Task<PreviaImportacaoDto> PrepararPreviaAsync(byte[] dados, string nomeArquivo,
-        string aba, int? anoManual, CancellationToken ct = default)
+        string aba, int? anoManual, CancellationToken ct = default) =>
+        (await PrepararPreviasAsync(dados, nomeArquivo, [new(aba, anoManual)], ct)).Single();
+
+    public async Task<IReadOnlyList<PreviaImportacaoDto>> PrepararPreviasAsync(byte[] dados, string nomeArquivo,
+        IReadOnlyCollection<SelecaoAbaImportacaoRequest> abas, CancellationToken ct = default)
     {
+        if (abas.Count is < 1 or > 100) throw new ArgumentException("Selecione de 1 a 100 abas mensais para revisar.");
+        if (abas.Select(x => x.Aba).Distinct(StringComparer.OrdinalIgnoreCase).Count() != abas.Count)
+            throw new ArgumentException("A mesma aba não pode ser selecionada mais de uma vez.");
         using var book = Abrir(dados);
+        var previas = new List<PreviaImportacaoDto>();
+        int totalLinhas = 0;
+        foreach (var selecao in abas)
+        {
+            ct.ThrowIfCancellationRequested();
+            try
+            {
+                var previa = LerPrevia(book, nomeArquivo, selecao.Aba, selecao.AnoManual, ct);
+                totalLinhas += previa.Linhas.Count;
+                if (totalLinhas > 20000)
+                    throw new ArgumentException("Limite de 20.000 linhas na prévia do lote. Selecione menos abas.");
+                previas.Add(previa);
+            }
+            catch (ArgumentException ex) { throw new ArgumentException($"Aba '{selecao.Aba}': {ex.Message}", ex); }
+        }
+
+        var linhas = previas.SelectMany(x => x.Linhas).ToList();
+        var meses = previas.Select(x => x.Competencia).Distinct().ToList();
+        var existentes = (await db.Lancamentos.AsNoTracking().Where(x => meses.Contains(x.Competencia)).ToListAsync(ct))
+            .Select(Identidade).ToHashSet();
+        var chaves = linhas.Select(x => x.ChaveOrigem).ToList();
+        var importadas = (await db.RegistrosImportados.AsNoTracking()
+            .Where(x => chaves.Contains(x.ChaveOrigem)).Select(x => x.ChaveOrigem).ToListAsync(ct))
+            .ToHashSet(StringComparer.Ordinal);
+        var chavesNoLote = new HashSet<string>(StringComparer.Ordinal);
+        var abasPorIdentidade = new Dictionary<IdentidadeLinha, string>();
+        foreach (var linha in linhas)
+        {
+            if (importadas.Contains(linha.ChaveOrigem) || existentes.Contains(Identidade(linha)))
+                MarcarDuplicada(linha, "Já existe um lançamento correspondente no banco.");
+            else if (!chavesNoLote.Add(linha.ChaveOrigem) || RepetidaEmOutraAba(linha, abasPorIdentidade))
+                MarcarDuplicada(linha, "Outro item equivalente já aparece em uma das abas deste lote.");
+        }
+        return previas;
+    }
+
+    private static PreviaImportacaoDto LerPrevia(XLWorkbook book, string nomeArquivo, string aba, int? anoManual, CancellationToken ct)
+    {
         var ws = book.Worksheets.FirstOrDefault(x => x.Name == aba)
             ?? throw new ArgumentException("Aba não encontrada na planilha.");
         var info = InfoAba(aba);
@@ -58,26 +103,11 @@ public sealed class ImportacaoExcelService(FinanceDbContext db) : IImportacaoExc
         var trabalhos = DescobrirLayoutTrabalhos(ws, trabalhoCol, cabecalho + 1, ultima);
         for (int r = cabecalho + 1; r <= ultima; r++)
         {
+            ct.ThrowIfCancellationRequested();
             AdicionarSeForLancamento(ws, r, contas, TipoLancamento.Despesa, competencia, nomeArquivo, aba, linhas);
             AdicionarSeForLancamento(ws, r, trabalhos, TipoLancamento.Receita, competencia, nomeArquivo, aba, linhas);
         }
 
-        var existentes = await db.Lancamentos.AsNoTracking()
-            .Where(x => x.Competencia == competencia).ToListAsync(ct);
-        var chaves = linhas.Select(x => x.ChaveOrigem).ToList();
-        var importadas = await db.RegistrosImportados.AsNoTracking()
-            .Where(x => chaves.Contains(x.ChaveOrigem)).Select(x => x.ChaveOrigem).ToListAsync(ct);
-        var importadasSet = importadas.ToHashSet(StringComparer.Ordinal);
-        foreach (var linha in linhas)
-        {
-            if (importadasSet.Contains(linha.ChaveOrigem) ||
-                existentes.Any(x => Iguais(x, linha)))
-            {
-                linha.Duplicada = true;
-                linha.Selecionada = false;
-                AdicionarAviso(linha, "Já existe um lançamento correspondente no banco.");
-            }
-        }
         return new PreviaImportacaoDto(aba, competencia, linhas);
     }
 
@@ -87,53 +117,59 @@ public sealed class ImportacaoExcelService(FinanceDbContext db) : IImportacaoExc
         // Um único clique salva somente as linhas marcadas; falha => rollback de todas elas.
         var marcadas = linhas.Where(x => x.Selecionada).ToList();
         if (marcadas.Count == 0) return new ResultadoImportacaoDto(0, 0, 0);
-        if (marcadas.Count > 2000) throw new ArgumentException("Limite de 2.000 registros por importação.");
+        if (marcadas.Count > 2000) throw new ArgumentException("Limite de 2.000 registros por confirmação, somando todas as abas.");
         using var transaction = await db.Database.BeginTransactionAsync(ct);
         int importadas = 0, duplicadas = 0, ignoradas = 0;
         var chavesNoLote = new HashSet<string>(StringComparer.Ordinal);
+        var abasPorIdentidade = new Dictionary<IdentidadeLinha, string>();
         // Snapshot anterior: registros iguais em linhas diferentes do mesmo arquivo podem ser legítimos.
         var meses = marcadas.Select(x => x.Competencia).Distinct().ToList();
-        var anteriores = await db.Lancamentos.AsNoTracking()
-            .Where(x => meses.Contains(x.Competencia)).ToListAsync(ct);
+        var anteriores = (await db.Lancamentos.AsNoTracking()
+            .Where(x => meses.Contains(x.Competencia)).ToListAsync(ct)).Select(Identidade).ToHashSet();
         var chaves = marcadas.Select(x => x.ChaveOrigem).ToList();
         var importadasAntes = (await db.RegistrosImportados.AsNoTracking()
             .Where(x => chaves.Contains(x.ChaveOrigem)).Select(x => x.ChaveOrigem).ToListAsync(ct))
             .ToHashSet(StringComparer.Ordinal);
-        foreach (var linha in marcadas)
+        try
         {
-            if (linha.Bloqueada || linha.Valor is null || linha.Valor <= 0 ||
-                decimal.Round(linha.Valor.Value, 2) != linha.Valor.Value ||
-                string.IsNullOrWhiteSpace(linha.Descricao) || linha.Descricao.Length > 180 ||
-                linha.Categoria.Length > 80 || linha.Observacoes?.Length > 1000 ||
-                linha.ChaveOrigem.Length != 64 || linha.Aba.Length > 100 ||
-                !Enum.IsDefined(linha.Tipo))
-            { ignoradas++; continue; }
-            if (!chavesNoLote.Add(linha.ChaveOrigem) ||
-                importadasAntes.Contains(linha.ChaveOrigem) || anteriores.Any(x => Iguais(x, linha)))
-            { duplicadas++; continue; }
-            var novo = new Lancamento
+            foreach (var linha in marcadas)
             {
-                Descricao = linha.Descricao.Trim(),
-                Categoria = linha.Categoria,
-                Tipo = linha.Tipo,
-                ValorPrevisto = linha.Valor.Value,
-                Competencia = linha.Competencia,
-                DataVencimento = linha.Data.HasValue ? DateOnly.FromDateTime(linha.Data.Value) : null,
-                Observacoes = linha.Observacoes?.Trim()
-            };
-            db.Lancamentos.Add(novo);
-            db.RegistrosImportados.Add(new RegistroImportacao
-            {
-                Lancamento = novo,
-                ChaveOrigem = linha.ChaveOrigem,
-                Aba = linha.Aba,
-                LinhaExcel = linha.LinhaExcel
-            });
-            importadas++;
+                if (linha.Bloqueada || linha.Valor is null || linha.Valor <= 0 ||
+                    decimal.Round(linha.Valor.Value, 2) != linha.Valor.Value ||
+                    string.IsNullOrWhiteSpace(linha.Descricao) || linha.Descricao.Length > 180 ||
+                    linha.Categoria.Length > 80 || linha.Observacoes?.Length > 1000 ||
+                    linha.ChaveOrigem.Length != 64 || linha.Aba.Length > 100 ||
+                    !Enum.IsDefined(linha.Tipo))
+                { ignoradas++; continue; }
+                if (!chavesNoLote.Add(linha.ChaveOrigem) ||
+                    importadasAntes.Contains(linha.ChaveOrigem) || anteriores.Contains(Identidade(linha)) ||
+                    RepetidaEmOutraAba(linha, abasPorIdentidade))
+                { duplicadas++; continue; }
+                var novo = new Lancamento
+                {
+                    Descricao = linha.Descricao.Trim(),
+                    Categoria = linha.Categoria,
+                    Tipo = linha.Tipo,
+                    ValorPrevisto = linha.Valor.Value,
+                    Competencia = linha.Competencia,
+                    DataVencimento = linha.Data.HasValue ? DateOnly.FromDateTime(linha.Data.Value) : null,
+                    Observacoes = linha.Observacoes?.Trim()
+                };
+                db.Lancamentos.Add(novo);
+                db.RegistrosImportados.Add(new RegistroImportacao
+                {
+                    Lancamento = novo,
+                    ChaveOrigem = linha.ChaveOrigem,
+                    Aba = linha.Aba,
+                    LinhaExcel = linha.LinhaExcel
+                });
+                importadas++;
+            }
+            await db.SaveChangesAsync(ct);
+            await transaction.CommitAsync(ct);
+            return new ResultadoImportacaoDto(importadas, ignoradas, duplicadas);
         }
-        await db.SaveChangesAsync(ct);
-        await transaction.CommitAsync(ct);
-        return new ResultadoImportacaoDto(importadas, ignoradas, duplicadas);
+        catch { db.ChangeTracker.Clear(); throw; }
     }
 
     private static XLWorkbook Abrir(byte[] dados)
@@ -254,11 +290,30 @@ public sealed class ImportacaoExcelService(FinanceDbContext db) : IImportacaoExc
         return false;
     }
 
-    private static bool Iguais(Lancamento salvo, LinhaImportacaoDto linha) =>
-        linha.Valor.HasValue && salvo.Tipo == linha.Tipo &&
-        salvo.Competencia == linha.Competencia && salvo.ValorPrevisto == linha.Valor.Value &&
-        Normalizar(salvo.Descricao) == Normalizar(linha.Descricao) &&
-        salvo.DataVencimento == (linha.Data.HasValue ? DateOnly.FromDateTime(linha.Data.Value) : null);
+    private readonly record struct IdentidadeLinha(TipoLancamento Tipo, DateOnly Competencia, decimal? Valor,
+        string Descricao, DateOnly? Vencimento);
+
+    private static IdentidadeLinha Identidade(Lancamento salvo) => new(salvo.Tipo, salvo.Competencia,
+        salvo.ValorPrevisto, Normalizar(salvo.Descricao), salvo.DataVencimento);
+
+    private static IdentidadeLinha Identidade(LinhaImportacaoDto linha) => new(linha.Tipo, linha.Competencia,
+        linha.Valor, Normalizar(linha.Descricao), linha.Data.HasValue ? DateOnly.FromDateTime(linha.Data.Value) : null);
+
+    private static bool RepetidaEmOutraAba(LinhaImportacaoDto linha, Dictionary<IdentidadeLinha, string> vistas)
+    {
+        if (linha.Bloqueada || linha.Valor is null) return false;
+        var chave = Identidade(linha);
+        if (vistas.TryGetValue(chave, out var aba)) return !string.Equals(aba, linha.Aba, StringComparison.Ordinal);
+        vistas.Add(chave, linha.Aba);
+        return false;
+    }
+
+    private static void MarcarDuplicada(LinhaImportacaoDto linha, string aviso)
+    {
+        linha.Duplicada = true;
+        linha.Selecionada = false;
+        AdicionarAviso(linha, aviso);
+    }
 
     private static string CategoriaDespesa(string d)
     {

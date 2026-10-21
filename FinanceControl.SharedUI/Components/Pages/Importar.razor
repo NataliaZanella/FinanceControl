@@ -1,6 +1,6 @@
 @page "/importar"
 @namespace FinanceControl.SharedUI.Components.Pages
-@using System.Globalization
+@using FinanceControl.SharedUI.Components
 @using Microsoft.AspNetCore.Components.Forms
 @inject IImportacaoExcelService Importador
 
@@ -15,174 +15,138 @@
         <a class="nav-link" href="/valores-a-receber">↙ &nbsp; Valores a receber</a>
         <a class="nav-link" href="/categorias">▦ &nbsp; Categorias</a>
         <div class="sidebar-note">Prévia e revisão antes de salvar. Seu arquivo original não é alterado.</div>
-        <div class="sidebar-foot">C# · Blazor · SQLite<br/>Versão local de desenvolvimento</div>
+        <div class="sidebar-foot">C# · Blazor · SQLite<br />Versão local de desenvolvimento</div>
     </aside>
-
     <main class="main-content">
-        <header class="topbar">
-            <div><div class="eyebrow">IMPORTAÇÃO SEGURA</div><h1>Importar sua planilha <span>✦</span></h1>
-                <p>Analise uma aba por vez e escolha o que deseja cadastrar.</p></div>
-            <a class="mini-btn nav-back" href="/">← Voltar ao painel</a>
-        </header>
-        @if (!string.IsNullOrWhiteSpace(Erro))
-        { <div class="alert alert-error" role="alert">@Erro</div> }
-        @if (!string.IsNullOrWhiteSpace(Sucesso))
-        { <div class="alert alert-success" role="status">@Sucesso</div> }
-
+        <header class="topbar"><div><div class="eyebrow">IMPORTAÇÃO SEGURA</div><h1>Importar sua planilha <span>✦</span></h1><p>Selecione uma ou várias abas e revise os itens antes de salvar.</p></div><a class="mini-btn nav-back" href="/">← Voltar ao painel</a></header>
+        @if (!string.IsNullOrWhiteSpace(Erro)) { <div class="alert alert-error" role="alert">@Erro</div> }
+        @if (!string.IsNullOrWhiteSpace(Sucesso)) { <div class="alert alert-success" role="status">@Sucesso</div> }
         <section class="panel import-intro">
-            <div class="panel-heading"><div><div class="section-kicker">PASSO 1</div><h2>Escolher arquivo Excel</h2></div><div class="panel-icon">▤</div></div>
-            <div class="form-field">
-                <label for="arquivo">Selecione seu arquivo .xlsx (até 12 MB)</label>
-                <InputFile id="arquivo" OnChange="AoSelecionarArquivo" accept=".xlsx" disabled="@Processando" />
-            </div>
-            <p class="field-note">O Excel é lido somente na memória do aplicativo local. Esta etapa não altera a planilha. Dados importados entram como <strong>previstos</strong>, sem gerar pagamentos ou recebimentos automaticamente.</p>
-
+            <div class="panel-heading"><div><div class="section-kicker">PASSO 1</div><h2>Escolher arquivo e abas</h2></div><div class="panel-icon">▤</div></div>
+            <div class="form-field"><label for="arquivo">Selecione seu arquivo .xlsx (até 12 MB)</label><InputFile id="arquivo" OnChange="AoSelecionarArquivo" accept=".xlsx" disabled="@Processando" /></div>
+            <p class="field-note">O Excel original não é alterado. Os registros entram como previstos, sem pagamentos ou recebimentos automáticos.</p>
             @if (Abas.Count > 0)
             {
-                <div class="form-pair import-controls">
-                    <div class="form-field"><label for="aba">Aba para revisar</label>
-                        <select id="aba" @bind="AbaSelecionada" @bind:after="CarregarPreviaAsync" disabled="@Processando">
-                            @foreach (var aba in Abas)
-                            {
-                                <option value="@aba.Nome">@aba.Nome @(aba.Suportada ? "" : "(revisão manual)")</option>
-                            }
-                        </select>
+                <fieldset class="entry-fields import-controls" disabled="@Processando">
+                    <legend>Abas para importar</legend>
+                    <div class="entry-actions"><button class="mini-btn" type="button" @onclick="() => SelecionarAbas(true)">Selecionar abas mensais</button><button class="mini-btn" type="button" @onclick="() => SelecionarAbas(false)">Desmarcar todas</button></div>
+                    <div class="import-sheet-list">
+                        @foreach (var aba in Abas)
+                        {
+                            <div class="import-sheet-option" @key="aba.Info.Nome">
+                                <label class="filter-check" for="@($"aba-{aba.Chave}")"><input id="@($"aba-{aba.Chave}")" type="checkbox" @bind="aba.Selecionada" @bind:after="InvalidarPrevia" disabled="@(!aba.Info.Suportada)" /><strong>@aba.Info.Nome</strong></label>
+                                @if (!aba.Info.Suportada) { <span class="small-muted">Formato não suportado · revisão individual</span> }
+                                else if (aba.Info.TemAno) { <span class="small-muted">Competência @($"{aba.Info.Mes:00}/{aba.Info.Ano}")</span> }
+                                else if (aba.Selecionada)
+                                {
+                                    <div class="form-field import-year"><label for="@($"ano-{aba.Chave}")">Ano desta aba (obrigatório)</label><input id="@($"ano-{aba.Chave}")" type="number" min="2000" max="2100" @bind="aba.AnoManual" @bind:after="InvalidarPrevia" /></div>
+                                }
+                            </div>
+                        }
                     </div>
-                    @if (AbaAtual is { Suportada: true, TemAno: false })
-                    {
-                        <div class="form-field"><label for="ano">Ano desta aba (obrigatório)</label>
-                            <input id="ano" type="number" min="2000" max="2100" @bind="AnoManual" @bind:after="CarregarPreviaAsync" />
-                        </div>
-                    }
-                </div>
+                    <div class="import-actions"><p class="field-note">@Abas.Count(x => x.Selecionada) abas selecionadas. Até 100 abas e 20.000 linhas por prévia; até 2.000 registros por confirmação. Abas sem ano exigem preenchimento individual. A aba de dívidas permanece bloqueada.</p><button class="primary-btn" type="button" @onclick="GerarPreviaAsync" disabled="@(!Abas.Any(x => x.Selecionada))">@(Processando ? "Analisando..." : "Gerar prévia das abas selecionadas") <span>→</span></button></div>
+                </fieldset>
             }
         </section>
-
-        @if (Previa is not null)
+        @if (Previas.Count > 0)
         {
-            <section class="panel import-preview">
-                <div class="panel-heading"><div><div class="section-kicker">PASSO 2 · PRÉ-VISUALIZAÇÃO</div>
-                    <h2>@Previa.Aba — @Previa.Competencia.ToString("MM/yyyy")</h2></div>
-                    <span class="count-pill">@Previa.Linhas.Count linhas encontradas</span>
-                </div>
-                <div class="import-stats">
-                    <span><strong>@Previa.Linhas.Count(x => x.Selecionada && !x.Bloqueada && !x.Duplicada)</strong> selecionadas</span>
-                    <span><strong>@Previa.Linhas.Count(x => x.Bloqueada)</strong> com valor inválido/ausente</span>
-                    <span><strong>@Previa.Linhas.Count(x => x.Duplicada)</strong> possíveis duplicadas</span>
-                    <span><strong>@Previa.Linhas.Count(x => !string.IsNullOrEmpty(x.Aviso))</strong> com aviso</span>
-                </div>
-                <p class="import-info">Desmarcamos datas fora da competência e observações que citam pagamentos/atrasos. Corrija a data, confira a observação e marque manualmente somente quando estiver correto. Uma linha sem valor não pode ser importada nesta etapa.</p>
-                <label class="filter-check"><input type="checkbox" @bind="MostrarSomenteSelecionaveis" /> Ocultar linhas com valores ausentes ou inválidos</label>
-                <div class="table-wrap">
-                    <table class="import-table">
-                        <thead><tr><th>Importar</th><th>Origem</th><th>Tipo / Descrição</th><th>Valor previsto</th><th>Vencimento / data</th><th>Aviso</th></tr></thead>
-                        <tbody>
-                            @foreach (var item in LinhasVisiveis)
-                            {
-                                <tr class="@(item.Duplicada || item.Bloqueada ? "import-locked" : "")">
-                                    <td><input type="checkbox" aria-label="Importar linha @item.LinhaExcel @item.Tipo" @bind="item.Selecionada" disabled="@(Processando || item.Bloqueada || item.Duplicada)" /></td>
-                                    <td>@item.Aba <div class="small-muted">Linha @item.LinhaExcel</div></td>
-                                    <td><strong>@item.Descricao</strong><div class="small-muted">@item.Categoria · @item.Tipo</div>
-                                        @if (!string.IsNullOrEmpty(item.Observacoes)) { <div class="small-muted">Obs.: @item.Observacoes</div> }
-                                    </td>
-                                    <td>@(item.Valor?.ToString("C2", Brasil) ?? "—")</td>
-                                    <td><input aria-label="Data linha @item.LinhaExcel" class="import-date" type="date" @bind="item.Data" disabled="@Processando" /></td>
-                                    <td><span class="import-warning">@(string.IsNullOrEmpty(item.Aviso) ? "—" : item.Aviso)</span></td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
-                </div>
-                <div class="import-actions">
-                    <p class="field-note">A importação é feita na competência @Previa.Competencia.ToString("MM/yyyy"). Mesmo com observações de pagamento, nenhum registro será marcado como quitado automaticamente.</p>
-                    <button class="primary-btn" type="button" @onclick="ConfirmarAsync"
-                        disabled="@(Processando || !Previa.Linhas.Any(x => x.Selecionada && !x.Bloqueada && !x.Duplicada))">
-                        @(Processando ? "Salvando..." : $"Confirmar importação de {Previa.Linhas.Count(x => x.Selecionada && !x.Bloqueada && !x.Duplicada)} registros") <span>→</span>
-                    </button>
-                </div>
+            <section class="panel import-intro">
+                <div class="panel-heading"><div><div class="section-kicker">PASSO 2 · REVISÃO DO LOTE</div><h2>@Previas.Count abas analisadas</h2></div><span class="count-pill">@Linhas.Count() linhas encontradas</span></div>
+                <div class="import-stats"><span><strong>@Selecionadas</strong> selecionadas no lote</span><span><strong>@Linhas.Count(x => x.Duplicada)</strong> possíveis duplicadas</span><span><strong>@Linhas.Count(x => x.Bloqueada)</strong> com valor inválido/ausente</span></div>
+                <div class="form-field"><label for="aba-revisao">Revisar aba</label><select id="aba-revisao" @bind="AbaRevisao" disabled="@Processando">@foreach (var previa in Previas) { <option value="@previa.Aba">@previa.Aba · @previa.Competencia.ToString("MM/yyyy") · @previa.Linhas.Count(x => x.Selecionada && !x.Bloqueada && !x.Duplicada) selecionadas</option> }</select></div>
+                <p class="field-note">As marcações e datas ficam preservadas enquanto você alterna as abas da prévia. Alterar a seleção de abas ou seus anos exige gerar uma nova prévia.</p>
+            </section>
+            @if (PreviaAtual is { } atual)
+            {
+                <PreviaAbaImportacao @key="atual" Previa="atual" Processando="Processando" AoAlterarSelecao="StateHasChanged" />
+            }
+            <section class="panel import-intro import-batch-confirm">
+                <div class="section-kicker">PASSO 3 · CONFIRMAÇÃO</div>
+                @if (Selecionadas > 2000) { <p class="import-info" role="alert">O limite é 2.000 registros por confirmação, somando todas as abas. Desmarque itens ou selecione menos abas para continuar.</p> }
+                <div class="import-actions"><p class="field-note">Confira todas as abas antes de confirmar. Cada registro mantém sua competência. O lote é salvo em uma transação; uma falha de gravação reverte todas as abas.</p><button class="primary-btn" type="button" @onclick="ConfirmarAsync" disabled="@(Processando || Selecionadas == 0 || Selecionadas > 2000)">@(Processando ? "Salvando..." : $"Confirmar importação de {Selecionadas} registros") <span>→</span></button></div>
             </section>
         }
-        <footer class="footer">FinanceControl • Importação local com prévia • Uma aba por vez</footer>
+        <footer class="footer">FinanceControl • Importação local com prévia • Uma ou várias abas</footer>
     </main>
 </div>
 
 @code {
-    private static readonly CultureInfo Brasil = CultureInfo.GetCultureInfo("pt-BR");
     private const long MaxArquivo = 12 * 1024 * 1024;
     private byte[]? Arquivo;
-    private string NomeArquivo = "";
-    private IReadOnlyList<AbaImportacaoDto> Abas = [];
-    private string AbaSelecionada = "";
-    private AbaImportacaoDto? AbaAtual => Abas.FirstOrDefault(x => x.Nome == AbaSelecionada);
-    private int? AnoManual;
-    private PreviaImportacaoDto? Previa;
-    private bool MostrarSomenteSelecionaveis = true;
+    private string NomeArquivo = "", AbaRevisao = "";
+    private List<OpcaoAba> Abas = [];
+    private IReadOnlyList<PreviaImportacaoDto> Previas = [];
+    private PreviaImportacaoDto? PreviaAtual => Previas.FirstOrDefault(x => x.Aba == AbaRevisao);
+    private IEnumerable<LinhaImportacaoDto> Linhas => Previas.SelectMany(x => x.Linhas);
+    private int Selecionadas => Linhas.Count(x => x.Selecionada && !x.Bloqueada && !x.Duplicada);
     private bool Processando;
-    private string? Erro;
-    private string? Sucesso;
-    private IEnumerable<LinhaImportacaoDto> LinhasVisiveis => Previa?.Linhas.Where(x => !MostrarSomenteSelecionaveis || !x.Bloqueada) ?? [];
+    private string? Erro, Sucesso;
+
+    private void InvalidarPrevia() { Previas = []; AbaRevisao = ""; Erro = Sucesso = null; }
+    private void SelecionarAbas(bool selecionar)
+    {
+        foreach (var aba in Abas) aba.Selecionada = selecionar && aba.Info.Suportada;
+        InvalidarPrevia();
+    }
 
     private async Task AoSelecionarArquivo(InputFileChangeEventArgs e)
     {
-        Erro = Sucesso = null;
-        Arquivo = null;
-        Previa = null;
-        Abas = [];
         if (Processando) return;
-        Processando = true;
+        InvalidarPrevia(); Arquivo = null; Abas = []; Processando = true;
         try
         {
             var file = e.File;
-            if (!file.Name.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
-                throw new ArgumentException("Selecione um arquivo .xlsx válido.");
+            if (!file.Name.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase)) throw new ArgumentException("Selecione um arquivo .xlsx válido.");
             if (file.Size > MaxArquivo) throw new ArgumentException("Arquivo maior que 12 MB.");
             await using var origem = file.OpenReadStream(MaxArquivo);
             using var destino = new MemoryStream();
             await origem.CopyToAsync(destino);
-            Arquivo = destino.ToArray();
-            NomeArquivo = file.Name;
-            Abas = Importador.ListarAbas(Arquivo);
-            AbaSelecionada = Abas.FirstOrDefault(x => x.Nome.Equals("OUTUBRO 2026", StringComparison.OrdinalIgnoreCase))?.Nome
-                ?? Abas.FirstOrDefault(x => x.Suportada && x.TemAno)?.Nome
-                ?? Abas.FirstOrDefault()?.Nome ?? "";
+            Arquivo = destino.ToArray(); NomeArquivo = file.Name;
+            Abas = Importador.ListarAbas(Arquivo).Select(x => new OpcaoAba(x)).ToList();
+            var primeira = Abas.FirstOrDefault(x => x.Info.Suportada && x.Info.TemAno) ?? Abas.FirstOrDefault(x => x.Info.Suportada);
+            if (primeira is not null) primeira.Selecionada = true;
         }
         catch (Exception ex) { Erro = ex.Message; }
         finally { Processando = false; }
-        await CarregarPreviaAsync();
     }
 
-    private async Task CarregarPreviaAsync()
+    private Task GerarPreviaAsync() => CarregarPreviasAsync(false);
+    private async Task CarregarPreviasAsync(bool manterSucesso)
     {
-        Erro = null;
-        Previa = null;
         if (Arquivo is null || Processando) return;
-        if (AbaAtual is not { Suportada: true })
-        { Erro = "Esta aba não tem o formato mensal de contas e trabalhos. A importação de dívidas será tratada separadamente."; return; }
-        if (!AbaAtual.TemAno && (!AnoManual.HasValue || AnoManual is < 2000 or > 2100))
-        { Erro = "Informe o ano da aba para evitar competência incorreta."; return; }
+        Erro = null; Previas = []; if (!manterSucesso) Sucesso = null;
         Processando = true;
         try
         {
-            Previa = await Importador.PrepararPreviaAsync(Arquivo, NomeArquivo, AbaSelecionada, AnoManual);
+            var selecoes = Abas.Where(x => x.Selecionada).Select(x => new SelecaoAbaImportacaoRequest(x.Info.Nome, x.AnoManual)).ToList();
+            Previas = await Importador.PrepararPreviasAsync(Arquivo, NomeArquivo, selecoes);
+            AbaRevisao = Previas.FirstOrDefault()?.Aba ?? "";
+            if (manterSucesso) foreach (var linha in Linhas) linha.Selecionada = false;
         }
-        catch (Exception ex) { Erro = ex.Message; }
+        catch (Exception ex) { Erro = manterSucesso ? "O lote foi salvo, mas não foi possível atualizar a prévia: " + ex.Message : ex.Message; }
         finally { Processando = false; }
     }
 
     private async Task ConfirmarAsync()
     {
-        if (Processando || Previa is null) return;
-        Processando = true;
-        Erro = Sucesso = null;
+        if (Processando || Selecionadas is 0 or > 2000) return;
+        Processando = true; Erro = Sucesso = null;
         try
         {
-            var resultado = await Importador.ConfirmarAsync(Previa.Linhas);
-            Sucesso = $"Importação concluída: {resultado.Importadas} registros cadastrados, " +
-                $"{resultado.Duplicadas} duplicados ignorados e {resultado.Ignoradas} inválidos ignorados. " +
-                "Confira os lançamentos no painel selecionando o mês importado.";
+            var resultado = await Importador.ConfirmarAsync(Linhas.ToList());
+            Sucesso = $"Importação concluída: {resultado.Importadas} registros cadastrados, {resultado.Duplicadas} duplicados ignorados e {resultado.Ignoradas} inválidos ignorados. " +
+                "Confira o painel no mês de cada aba. As seleções foram limpas; revise novamente antes de outra confirmação.";
         }
         catch (Exception ex) { Erro = "Não foi possível importar: " + ex.Message; }
         finally { Processando = false; }
-        if (Erro is null) await CarregarPreviaAsync();
+        if (Sucesso is not null) await CarregarPreviasAsync(true);
+    }
+
+    private sealed class OpcaoAba(AbaImportacaoDto info)
+    {
+        public Guid Chave { get; } = Guid.NewGuid();
+        public AbaImportacaoDto Info { get; } = info;
+        public bool Selecionada { get; set; }
+        public int? AnoManual { get; set; }
     }
 }

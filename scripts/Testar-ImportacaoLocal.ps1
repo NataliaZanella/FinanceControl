@@ -26,6 +26,13 @@ try {
 </sheetData></worksheet>
 '@
     }
+    # Abas adicionais ficticias para conferir selecao individual, lote e ano manual.
+    $arquivos['[Content_Types].xml'] = $arquivos['[Content_Types].xml'].Replace('</Types>', '<Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/worksheets/sheet3.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/worksheets/sheet4.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>')
+    $arquivos['xl/workbook.xml'] = $arquivos['xl/workbook.xml'].Replace('</sheets>', '<sheet name="NOVEMBRO 2026" sheetId="2" r:id="rId2"/><sheet name="JANEIRO" sheetId="3" r:id="rId3"/><sheet name="VALOR TOTAL DE DIVIDAS" sheetId="4" r:id="rId4"/></sheets>')
+    $arquivos['xl/_rels/workbook.xml.rels'] = $arquivos['xl/_rels/workbook.xml.rels'].Replace('</Relationships>', '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet3.xml"/><Relationship Id="rId4" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet4.xml"/></Relationships>')
+    $arquivos['xl/worksheets/sheet2.xml'] = $arquivos['xl/worksheets/sheet1.xml'].Replace('Despesa sintetica', 'Despesa novembro sintetica').Replace('Receita sintetica', 'Receita novembro sintetica')
+    $arquivos['xl/worksheets/sheet3.xml'] = $arquivos['xl/worksheets/sheet1.xml'].Replace('Despesa sintetica', 'Despesa janeiro sintetica').Replace('Receita sintetica', 'Receita janeiro sintetica')
+    $arquivos['xl/worksheets/sheet4.xml'] = '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>'
     foreach ($nome in $arquivos.Keys) {
         $entrada = $zip.CreateEntry($nome)
         $writer = [IO.StreamWriter]::new($entrada.Open(), [Text.UTF8Encoding]::new($false))

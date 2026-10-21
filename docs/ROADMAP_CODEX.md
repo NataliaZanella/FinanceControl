@@ -12,7 +12,7 @@ Este roteiro é uma proposta de prioridades, não uma ordem para o Codex impleme
 ## Fase 1 — Importação XLSX e prevenção de duplicidade
 **Objetivo:** instalar/corrigir/testar o importador, caso ainda necessário.
 
-**Aceite:** build sem erros; seleção de aba, revisão, importação confirmada e reimportação sinalizando duplicata; nenhum pagamento presumido; aba dívidas bloqueada. Usar planilha sintética nos testes automáticos. Para teste manual com dados reais, pedir backup e revisão humana antes de confirmar gravação.
+**Aceite:** build sem erros; seleção de uma ou várias abas, revisão por aba, importação confirmada e reimportação sinalizando duplicata; nenhum pagamento presumido; aba dívidas bloqueada. Usar planilha sintética nos testes automáticos. Para teste manual com dados reais, pedir backup e revisão humana antes de confirmar gravação.
 
 ## Fase 2 — Operações de lançamentos e robustez
 **Progresso:** edição e exclusão com confirmação implementadas em `developer`; exclusão com baixas e alterações de tipo/competência com baixas são bloqueadas. Filtros mensais por busca, tipo, situação e categoria implementados, com seis resultados por página e indicadores do mês inteiro. Cadastro de categorias implementado com renomeação transacional dos usos e exclusão bloqueada em uso; atualização aditiva com backup validada em banco sintético. Testes e endpoints/HTML HTTP verificados. Roteiros em `docs/edicao-exclusao.md`, `docs/filtros-lancamentos.md` e `docs/categorias.md`. Cadastro de contas permanece para incremento posterior.
@@ -42,3 +42,7 @@ Este roteiro é uma proposta de prioridades, não uma ordem para o Codex impleme
 - Testes e comandos executados (com resultado real).
 - Riscos e medidas de backup/retorno.
 - Próximo passo sugerido, sem iniciar novas fases automaticamente.
+
+### Evolução da fase 1 — 21/10/2026
+
+Seleção múltipla de abas concluída: ano por aba, prévia paginada, confirmação atômica do conjunto e bloqueio de duplicidades entre abas equivalentes. 103 testes sintéticos aprovados. Não houve mudança de esquema nem manipulação do banco pessoal. Conferência visual segue o roteiro em docs/teste-interface-importacao.md.

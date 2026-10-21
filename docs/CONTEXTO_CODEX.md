@@ -1,6 +1,6 @@
 # FinanceControl — contexto consolidado do projeto
 
-Atualização do contexto: 20/10/2026. Documento produzido a partir das decisões e testes conversados com a desenvolvedora. **Não substitui a inspeção do código da cópia local.**
+Atualização do contexto: 21/10/2026. Documento produzido a partir das decisões e testes conversados com a desenvolvedora. **Não substitui a inspeção do código da cópia local.**
 
 ## 1. Visão do produto
 - Controle financeiro pessoal evoluído de uma planilha Excel já utilizada há anos.
@@ -54,7 +54,7 @@ Arquivo original fornecido: `PLANILHA DE CONTASs.xlsx` (arquivo **privado**, nã
 - A aba de dívidas precisa de parser e confirmação próprios, pois possui valores positivos/negativos, textos e status misturados.
 
 ## 6. Importação projetada no pacote atualizado
-- Tela `/importar`: upload `.xlsx` local; escolha **uma aba por vez**, prévia com checkboxes e correções de data; confirmar só após revisão.
+- Tela `/importar`: upload `.xlsx` local; escolha **uma ou várias abas**, ano manual individual quando necessário, prévia por aba com seis linhas por página e correções de data; confirmar só após revisão.
 - Processamento com ClosedXML, sem alterar o Excel original.
 - Ano explícito ou digitado manualmente para abas sem ano; impedir importação automática da aba de dívidas.
 - Ignorar totais e linhas sem descrição; bloquear valores inválidos/vazios e marcar datas suspeitas como não selecionadas.
@@ -83,3 +83,7 @@ Arquivo original fornecido: `PLANILHA DE CONTASs.xlsx` (arquivo **privado**, nã
 - Não expor dados pessoais/financeiros da planilha em logs, fixtures, issues públicos nem Git.
 - Não apagar ou sobrescrever `.db` existente; fazer backup com o app parado antes de alterações de persistência.
 - Usar dados falsos nos testes; não concluir que os dados reais foram importados apenas porque a tela existe.
+
+## Importação de várias abas — 21/10/2026
+
+Seleção múltipla implementada em SharedUI, com contrato reutilizável em Application e processamento em Infrastructure. Confirmação única e atômica, proteção contra repetição entre abas da mesma competência e reimportação. Limites: 100 abas, 20.000 linhas candidatas na prévia e 2.000 selecionadas por confirmação; mantidos 12 MB e 5.000 linhas por aba. Nenhuma mudança de esquema ou uso de dados pessoais. Validação: 103 testes aprovados; fixture do script também conferida com ClosedXML e SQLite em memória. Conferência visual manual pendente por indisponibilidade de navegador automatizável. Roteiro em docs/teste-interface-importacao.md.

@@ -1,0 +1,56 @@
+@using System.Globalization
+
+<section class="panel import-preview">
+    <div class="panel-heading"><div><div class="section-kicker">REVISÃO DA ABA</div><h2>@Previa.Aba — @Previa.Competencia.ToString("MM/yyyy")</h2></div><span class="count-pill">@Previa.Linhas.Count linhas</span></div>
+    <div class="import-stats">
+        <span><strong>@Previa.Linhas.Count(x => x.Selecionada && !x.Bloqueada && !x.Duplicada)</strong> selecionadas nesta aba</span>
+        <span><strong>@Previa.Linhas.Count(x => x.Bloqueada)</strong> com valor inválido/ausente</span>
+        <span><strong>@Previa.Linhas.Count(x => x.Duplicada)</strong> possíveis duplicadas</span>
+    </div>
+    <p class="import-info">Datas suspeitas e observações de pagamento/atraso começam desmarcadas. Confira, ajuste a data e marque somente os itens corretos. Nenhuma baixa será criada automaticamente.</p>
+    <div class="filters-caption">
+        <label class="filter-check"><input type="checkbox" @bind="MostrarSomenteSelecionaveis" @bind:after="() => Pagina = 1" /> Ocultar valores inválidos/ausentes</label>
+        <button class="mini-btn" type="button" disabled="@Processando" @onclick="DesmarcarAsync">Desmarcar itens desta aba</button>
+    </div>
+    @if (LinhasVisiveis.Count == 0) { <p class="empty-state">Nenhuma linha visível. Desative o filtro para conferir os itens bloqueados, se houver.</p> }
+    else
+    {
+        <div class="table-wrap"><table class="import-table">
+            <thead><tr><th>Importar</th><th>Origem</th><th>Tipo / Descrição</th><th>Valor previsto</th><th>Vencimento / data</th><th>Aviso</th></tr></thead>
+            <tbody>
+                @foreach (var item in LinhasVisiveis.Skip((Pagina - 1) * 6).Take(6))
+                {
+                    <tr @key="item.ChaveOrigem" class="@(item.Duplicada || item.Bloqueada ? "import-locked" : "")">
+                        <td><input type="checkbox" aria-label="Importar linha @item.LinhaExcel @item.Tipo de @item.Aba" @bind="item.Selecionada" @bind:after="NotificarAsync" disabled="@(Processando || item.Bloqueada || item.Duplicada)" /></td>
+                        <td>@item.Aba<div class="small-muted">Linha @item.LinhaExcel</div></td>
+                        <td><strong>@item.Descricao</strong><div class="small-muted">@item.Categoria · @item.Tipo</div>@if (!string.IsNullOrEmpty(item.Observacoes)) { <div class="small-muted">Obs.: @item.Observacoes</div> }</td>
+                        <td>@(item.Valor?.ToString("C2", CultureInfo.GetCultureInfo("pt-BR")) ?? "—")</td>
+                        <td><input aria-label="Data linha @item.LinhaExcel de @item.Aba" class="import-date" type="date" @bind="item.Data" disabled="@Processando" /></td>
+                        <td><span class="import-warning">@(string.IsNullOrEmpty(item.Aviso) ? "—" : item.Aviso)</span></td>
+                    </tr>
+                }
+            </tbody>
+        </table></div>
+        <nav class="entries-pagination" aria-label="Paginação da prévia">
+            <button class="mini-btn" disabled="@(Processando || Pagina == 1)" @onclick="() => Pagina--">← Anterior</button>
+            <span role="status">Página @Pagina de @TotalPaginas</span>
+            <button class="mini-btn" disabled="@(Processando || Pagina == TotalPaginas)" @onclick="() => Pagina++">Próxima →</button>
+        </nav>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public PreviaImportacaoDto Previa { get; set; } = default!;
+    [Parameter] public bool Processando { get; set; }
+    [Parameter] public EventCallback AoAlterarSelecao { get; set; }
+    private bool MostrarSomenteSelecionaveis = true;
+    private int Pagina = 1;
+    private IReadOnlyList<LinhaImportacaoDto> LinhasVisiveis => Previa.Linhas.Where(x => !MostrarSomenteSelecionaveis || !x.Bloqueada).ToList();
+    private int TotalPaginas => Math.Max(1, (LinhasVisiveis.Count + 5) / 6);
+    private Task NotificarAsync() => AoAlterarSelecao.InvokeAsync();
+    private async Task DesmarcarAsync()
+    {
+        foreach (var item in Previa.Linhas) item.Selecionada = false;
+        await NotificarAsync();
+    }
+}
